@@ -1,9 +1,12 @@
-/*
-/// Module: monopoly
 module monopoly::monopoly;
-*/
 
-// For Move coding conventions, see
-// https://docs.sui.io/concepts/sui-move-concepts/conventions
+use monopoly::cell::Cell;
 
+
+public struct Monopoly has key, store{
+    id: UID,
+    cells: vector<Cell>,
+}
+
+public struct DolphinOracle {}
 
