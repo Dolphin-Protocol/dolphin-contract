@@ -1,13 +1,15 @@
 module monopoly::monopoly;
-use std::string::String;
+use std::string::{Self, String};
+use std::type_name::{Self, TypeName};
 
+use sui::balance::{Self, Balance};
 use sui::bag::{Self, Bag};
 use sui::object_bag::{Self, ObjectBag};
 use sui::vec_map::{Self, VecMap};
 use sui::vec_set::{Self, VecSet};
 use sui::dynamic_field as df;
 
-use monopoly::cell::Cell;
+use monopoly::action::Action;
 
 // === Imports ===
 
@@ -24,6 +26,7 @@ public struct AdminCap has key {
 public struct Game has key, store {
     id: UID,
     versions: VecSet<u64>,
+    supported_assets: VecSet<TypeName>,
     // TODO: mapping "${address}-${assets}"
     player_assets: Bag,
     /// players' positions and the order of player's turn
@@ -51,13 +54,20 @@ public struct TurnCap has key {
 public struct ActionRequest has key {
     id: UID,
     pos_index: u64,
-    action: String,
-    // function method for convenient off-chain querying
-    // package: String,
-    // module_name: String,
-    // function: String
-    /// called when the action is finished all the actions
+    action: Action,
     settled: bool
+}
+
+// TODO: test
+public fun drop_action_request(action_request: ActionRequest){
+    let ActionRequest{
+        id,
+        pos_index: _,
+        action: _,
+        settled: _
+    } = action_request;
+
+    object::delete(id);
 }
 
 // === Events ===
@@ -65,6 +75,26 @@ public struct ActionRequest has key {
 // === Method Aliases ===
 
 // === Public Functions ===
+public fun supported_assets(self: &Game): VecSet<TypeName> {
+    self.supported_assets
+}
+fun player_asset_key(asset_type: TypeName, owner: address): String{
+    let mut type_str = string::from_ascii(asset_type.into_string());
+    let address_str = owner.to_string();
+
+    type_str.append_utf8(b"-");
+    type_str.append(address_str);
+
+    type_str
+}
+public fun player_asset<T>(self: &Game, owner: address): &Balance<T>{
+    let asset_key = player_asset_key(type_name::get<T>(), owner);
+    &self.player_assets[asset_key]
+}
+fun player_asset_mut<T>(self: &mut Game, owner: address): &mut Balance<T>{
+    let asset_key = player_asset_key(type_name::get<T>(), owner);
+    &mut self.player_assets[asset_key]
+}
 // -- Cells
 fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
     self.cells.borrow(pos_index)
@@ -75,14 +105,14 @@ fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Ce
 public fun borrow_cell_mut_with_request<Cell: key + store>(
     self: &mut Game,
     request: &ActionRequest
-):&mut Cell{
+): &mut Cell {
     self.borrow_cell_mut(request.pos_index)
 }
 // -- ActionRequest
 public fun action_request_pos_index(req: &ActionRequest): u64{
     req.pos_index
 }
-public fun action_request_action(req: &ActionRequest): String{
+public fun action_request_action(req: &ActionRequest): Action{
     req.action
 }
 public fun action_request_add_state<K: copy + drop + store, V: store>(
@@ -148,6 +178,8 @@ fun new(
     Game{
         id: object::new(ctx),
         versions: vec_set::singleton(MODULE_VERSION),
+        supported_assets: vec_set::empty(),
+        player_assets: bag::new(ctx),
         player_position: vec_map::from_keys_values(players, values),
         cells: object_bag::new(ctx),
         last_player,
@@ -160,6 +192,8 @@ fun drop(self: Game){
     let Game{
         id,
         versions: _,
+        supported_assets: _,
+        player_assets,
         cells,
         player_position: _,
         last_player: _,
@@ -167,6 +201,7 @@ fun drop(self: Game){
         plays: _
     } = self;
 
+    player_assets.destroy_empty();
     cells.destroy_empty();
 
     object::delete(id);
@@ -186,7 +221,7 @@ fun test_basic_game(){
     let player_b = @0xB;
     let player_c = @0xC;
 
-    let mut game = new(&mut ctx, vector[player_a, player_b, player_c]);
+    let mut game = new(vector[player_a, player_b, player_c], &mut ctx);
 
     std::u64::do!<()>(5, |_| game.roll_game());
 

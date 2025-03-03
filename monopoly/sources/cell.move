@@ -4,6 +4,7 @@ use std::type_name::{Self, TypeName};
 
 use sui::bag::Bag;
 
+use monopoly::action::{Self, Action};
 use monopoly::monopoly::{ Game, ActionRequest };
 
 const ENotBuyAction: u64 = 100;
@@ -52,9 +53,7 @@ public struct JailState has store{
 // === Method Aliases ===
 
 // === Public Functions ===
-public fun keys():vector<vector<u8>>{
-    vector[b"buy", b"pay", b"jail"]
-}
+
 // === View Functions ===
 
 // === Admin Functions ===
@@ -65,8 +64,7 @@ public fun execute_buy<CoinType>(
     amount: u64,
     purchased_amount: u64
 ){
-    let key = string::utf8(keys()[0]);
-    assert!(request.action_request_action() == key, ENotBuyAction);
+    assert!(request.action_request_action() == action::buyAction(), ENotBuyAction);
 
     let state = BuyState {
         type_name: type_name::get<CoinType>(),
@@ -74,58 +72,68 @@ public fun execute_buy<CoinType>(
         purchased_amount,
     };
 
-    request.action_request_add_state(key, state);
+    request.action_request_add_state(action::buyAction(), state);
 }
 
-public fun execute_pay<CoinType>(
+// public fun execute_pay<CoinType>(
     // request: &mut ActionRequest,
     // amount: u64,
     // purchased_amount: u64
-){
-    todo!()
-}
+// ){
+//     todo!()
+// }
 
-public fun execute_jail<CoinType>(
+// public fun execute_jail<CoinType>(
     // request: &mut ActionRequest,
     // amount: u64,
     // purchased_amount: u64
-){
-    todo!()
-}
+// ){
+//     todo!()
+// }
 
 public fun settle(
     game: &mut Game,
-    request: ActionRequest,
+    mut request: ActionRequest,
 ){
     let action = request.action_request_action();
     
-    let keys = keys();
-    // todo: refactor
-    let buy_key = string::utf8(keys[0]);
-    let pay_key = string::utf8(keys[1]);
-    let jail_key = string::utf8(keys[2]);
+    let buy_action = action::buyAction();
+    let pay_action = action::payAction();
+    let jail_action = action::jailAction();
+    let chance_action = action::changeAction();
 
-    // execute respective acitons by state
-    if(action == buy_key){
-        // buy action
-        let BuyState{
-            type_name,
-            amount,
-            purchased_amount
-        } = request.action_request_remove_state(buy_key);
-    }else if(action == pay_key){
-        let PayState{
-            // type_name,
-            // amount,
-            // purchased_amount
-        } = request.action_request_remove_state(pay_key);
-    }else{
-        let JailState{
-            // type_name,
-            // amount,
-            // purchased_amount
-        } = request.action_request_remove_state(jail_key);
+    match(action){
+        buy_action => {
+            let BuyState{
+                type_name,
+                amount,
+                purchased_amount
+            } = request.action_request_remove_state(buy_action);
+        },
+        pay_action => {
+            let PayState{
+                // type_name,
+                // amount,
+                // purchased_amount
+            } = request.action_request_remove_state(pay_action);
+        },
+        jail_action => {
+            let JailState{
+                // type_name,
+                // amount,
+                // purchased_amount
+            } = request.action_request_remove_state(jail_action);
+        },
+        chance_action => {
+            let JailState{
+                // type_name,
+                // amount,
+                // purchased_amount
+            } = request.action_request_remove_state(jail_action);
+        },
     };
+
+    request.drop_action_request();
 }
 
 // === Private Functions ===
