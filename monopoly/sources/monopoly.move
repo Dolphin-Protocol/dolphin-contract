@@ -1,9 +1,11 @@
 module monopoly::monopoly;
 use std::string::String;
 
+use sui::bag::{Self, Bag};
 use sui::object_bag::{Self, ObjectBag};
 use sui::vec_map::{Self, VecMap};
 use sui::vec_set::{Self, VecSet};
+use sui::dynamic_field as df;
 
 use monopoly::cell::Cell;
 
@@ -22,9 +24,12 @@ public struct AdminCap has key {
 public struct Game has key, store {
     id: UID,
     versions: VecSet<u64>,
+    // TODO: mapping "${address}-${assets}"
+    player_assets: Bag,
     /// players' positions and the order of player's turn
     player_position: VecMap<address, u64>,
     /// positions of cells in the map
+    /// Mapping<u64, T>
     cells: ObjectBag,
     last_player: address,
     last_action_time: u64,
@@ -46,6 +51,7 @@ public struct TurnCap has key {
 public struct ActionRequest has key {
     id: UID,
     pos_index: u64,
+    action: String,
     // function method for convenient off-chain querying
     // package: String,
     // module_name: String,
@@ -75,6 +81,22 @@ public fun borrow_cell_mut_with_request<Cell: key + store>(
 // -- ActionRequest
 public fun action_request_pos_index(req: &ActionRequest): u64{
     req.pos_index
+}
+public fun action_request_action(req: &ActionRequest): String{
+    req.action
+}
+public fun action_request_add_state<K: copy + drop + store, V: store>(
+    req: &mut ActionRequest,
+    state_key: K,
+    state: V
+){
+    df::add(&mut req.id, state_key, state);
+}
+public fun action_request_remove_state<K: copy + drop + store, V: store>(
+    req: &mut ActionRequest,
+    state_key: K,
+):V{
+    df::remove(&mut req.id, state_key)
 }
 
 // === View Functions ===
