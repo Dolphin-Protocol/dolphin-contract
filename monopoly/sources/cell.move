@@ -3,6 +3,7 @@ use std::string::{ Self, String };
 use std::type_name::{ Self, TypeName };
 
 use sui::vec_map::{ Self, VecMap };
+use sui::transfer::Receiving;
 
 use monopoly::action::{ Self, Action };
 use monopoly::monopoly::{ Game, ActionRequest, AdminCap };
@@ -97,7 +98,7 @@ public fun add_house_to_registry(
 
 // === Package Functions ===
 public fun execute_buy<T>(
-    request: &mut ActionRequest,
+    request: ActionRequest,
     payment: u64
 ){
     assert!(request.action_request_action() == action::buyAction(), ENotBuyAction);
@@ -108,6 +109,12 @@ public fun execute_buy<T>(
     };
 
     request.action_request_add_state(action::buyAction(), arg);
+
+    // mark settled in action_request
+    request.settle_action_request();
+
+    // transfer action to game object
+    request.finish_action();
 }
 
 // public fun execute_pay<CoinType>(
@@ -129,9 +136,10 @@ public fun execute_buy<T>(
 /// executed by server to settle the game state
 public fun settle_buy<T>(
     game: &mut Game,
-    mut request: ActionRequest,
+    received_request: Receiving<ActionRequest>,
     ctx: &mut TxContext
 ){
+    let request = game.receive_action_request(received_request);
     let (player, pos_index, action) = request.action_request_info();
     assert!(request.action_request_action()== action::buyAction(), ENotBuyAction);
 
@@ -157,6 +165,7 @@ public fun settle_buy<T>(
     // update player's balance
     let payment = game.player_asset_mut_with_request<T>(&request).split(amount);
     game.deposit_fund(payment);
+
     // consume ActionRequest and transfer new TurnCap
     game.drop_action_request(request, ctx);
 }

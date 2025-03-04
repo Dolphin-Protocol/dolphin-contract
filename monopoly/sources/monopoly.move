@@ -2,6 +2,8 @@ module monopoly::monopoly;
 use std::string::{Self, String};
 use std::type_name::{Self, TypeName};
 
+use sui::event;
+use sui::transfer::Receiving;
 use sui::random::{ Self, Random };
 use sui::balance::{Self, Balance};
 use sui::bag::{Self, Bag};
@@ -20,6 +22,7 @@ use monopoly::action::Action;
 const MODULE_VERSION: u64 = 1;
 
 const ENotExistPlayer: u64 = 101;
+const EActionRequestNotSettled: u64 = 102;
 // === Structs ===
 
 public struct AdminCap has key {
@@ -98,6 +101,12 @@ public fun drop_action_request(
 }
 
 // === Events ===
+public struct PlayerMoveEvent has copy, drop{
+    game: ID,
+    player: address,
+    moved_steps: u8,
+    turn_cap_id: ID
+}
 
 // === Method Aliases ===
 
@@ -195,6 +204,9 @@ public fun action_request_pos_index(req: &ActionRequest): u64{
 public fun action_request_action(req: &ActionRequest): Action{
     req.action
 }
+public fun action_request_game(req: &ActionRequest): ID{
+    req.game
+}
 public fun action_request_add_state<K: copy + drop + store, V: store>(
     req: &mut ActionRequest,
     state_key: K,
@@ -207,6 +219,10 @@ public fun action_request_remove_state<K: copy + drop + store, V: store>(
     state_key: K,
 ):V{
     df::remove(&mut req.id, state_key)
+}
+
+public fun settle_action_request(request: &mut ActionRequest){
+    request.settled = true;
 }
 
 // === View Functions ===
@@ -249,7 +265,7 @@ entry fun add_cell<Cell: key + store>(
 // === Package Functions ===
 
 entry fun player_move(
-    turn_cap: &mut TurnCap,
+    turn_cap: TurnCap,
     random: &Random,
     ctx: &mut TxContext
 ){
@@ -259,14 +275,25 @@ entry fun player_move(
     turn_cap.moved_steps = moved_steps;
 
     // emit the new position event
+    event::emit(
+        PlayerMoveEvent {
+            game: turn_cap.game,
+            player: turn_cap.player,
+            moved_steps,
+            turn_cap_id: object::id(&turn_cap),
+        }
+    );
+    // transfer to game object
+    transfer::transfer(turn_cap, turn_cap.game.to_address());
 }
 
 // executed by server
 public fun settle_player_move(
     self: &mut Game,
-    turn_cap: TurnCap,
+    receiving_turn_cap: Receiving<TurnCap>,
     ctx: &mut TxContext
 ){
+    let turn_cap = transfer::receive(&mut self.id, receiving_turn_cap);
     let TurnCap{
         id,
         game,
@@ -289,6 +316,21 @@ public fun settle_player_move(
     };
 
     transfer::transfer(action_request, player);
+}
+
+public fun finish_action(
+    request: ActionRequest
+){
+    assert!(request.settled, EActionRequestNotSettled);
+
+    transfer::transfer(request, request.game.to_address());
+}
+
+public fun receive_action_request(
+    self: &mut Game,
+    received_request: Receiving<ActionRequest>,
+):ActionRequest{
+    transfer::receive(&mut self.id, received_request)
 }
 
 // === Private Functions ===
