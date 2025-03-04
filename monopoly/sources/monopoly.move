@@ -17,6 +17,8 @@ use monopoly::action::Action;
 
 // === Constants ===
 const MODULE_VERSION: u64 = 1;
+
+const ENotExistPlayer: u64 = 101;
 // === Structs ===
 
 public struct AdminCap has key {
@@ -53,21 +55,39 @@ public struct TurnCap has key {
 
 public struct ActionRequest has key {
     id: UID,
+    game: ID,
+    player: address,
     pos_index: u64,
     action: Action,
     settled: bool
 }
 
-// TODO: test
-public fun drop_action_request(action_request: ActionRequest){
+/// Consume the action_request and transfer TurnCap
+public fun drop_action_request(
+    self: &mut Game,
+    action_request: ActionRequest,
+    ctx: &mut TxContext
+){
     let ActionRequest{
         id,
+        game,
+        player,
         pos_index: _,
         action: _,
         settled: _
     } = action_request;
 
     object::delete(id);
+
+    let next_player = self.next_player_of(player);
+
+    let turn_cap = TurnCap {
+        id: object::new(ctx),
+        game,
+        expired_at: 0,
+    };
+
+    transfer::transfer(turn_cap, next_player);
 }
 
 // === Events ===
@@ -95,6 +115,25 @@ fun player_asset_mut<T>(self: &mut Game, owner: address): &mut Balance<T>{
     let asset_key = player_asset_key(type_name::get<T>(), owner);
     &mut self.player_assets[asset_key]
 }
+public fun player_asset_mut_with_request<T>(
+    self: &mut Game,
+    request: &ActionRequest,
+): &mut Balance<T>{
+    self.player_asset_mut(request.player)
+}
+fun game_fund_mut<T>(self: &mut Game): &mut Balance<T> {
+    let game_address = object::id_address(self);
+    let asset_key = player_asset_key(type_name::get<T>(), game_address);
+
+    &mut self.player_assets[asset_key]
+}
+
+public fun deposit_fund<T>(
+    self: &mut Game,
+    fund: Balance<T>
+): u64{
+    self.game_fund_mut().join(fund)
+}
 // -- Cells
 fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
     self.cells.borrow(pos_index)
@@ -109,6 +148,13 @@ public fun borrow_cell_mut_with_request<Cell: key + store>(
     self.borrow_cell_mut(request.pos_index)
 }
 // -- ActionRequest
+public fun action_request_info(req: &ActionRequest): (address, u64, Action) {
+    (
+        req.player,
+        req.pos_index,
+        req.action,
+    )
+}
 public fun action_request_pos_index(req: &ActionRequest): u64{
     req.pos_index
 }
@@ -138,6 +184,16 @@ public fun num_of_players(self: &Game): u64{
 }
 public fun current_round(self: &Game): u64{
     self.plays / self.num_of_players()
+}
+public fun next_player_of(self: &Game, player: address): address{
+    let players = self.players();
+    let idx_opt = self.players().find_index!(|player_| player_ = &player);
+
+    assert!(idx_opt.is_some(), ENotExistPlayer);
+    let idx = idx_opt.extract();
+    let last_index = players.length() - 1;
+
+    if(idx == last_index) players[0] else players[idx + 1]
 }
 
 // === Admin Functions ===
