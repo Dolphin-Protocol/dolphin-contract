@@ -2,6 +2,7 @@ module monopoly::monopoly;
 use std::string::{Self, String};
 use std::type_name::{Self, TypeName};
 
+use sui::random::{ Self, Random };
 use sui::balance::{Self, Balance};
 use sui::bag::{Self, Bag};
 use sui::object_bag::{Self, ObjectBag};
@@ -33,6 +34,8 @@ public struct Game has key, store {
     player_assets: Bag,
     /// players' positions and the order of player's turn
     player_position: VecMap<address, u64>,
+    // cell_action; to check which action should player execute
+    cell_action: VecMap<u64, Action>,
     /// positions of cells in the map
     /// Mapping<u64, T>
     cells: ObjectBag,
@@ -49,6 +52,8 @@ public struct CellAccess has key, store {
 public struct TurnCap has key {
     id: UID,
     game: ID,
+    player: address,
+    moved_steps: u8,
     ///f valid time window to allow user do the action
     expired_at: u64
 }
@@ -84,6 +89,8 @@ public fun drop_action_request(
     let turn_cap = TurnCap {
         id: object::new(ctx),
         game,
+        player: next_player,
+        moved_steps: 0,
         expired_at: 0,
     };
 
@@ -134,7 +141,31 @@ public fun deposit_fund<T>(
 ): u64{
     self.game_fund_mut().join(fund)
 }
+// -- player_positions
+fun position_of(self: &Game, player: address): u64 {
+    self.player_position[&player]
+}
+
+fun player_move_position(
+    self: &mut Game,
+    player: address,
+    moved_steps: u8
+): u64 {
+    let current_position = self.player_position[&player];
+    let new_position = current_position + (moved_steps as u64);
+    let last_position_index = self.num_of_cells() - 1;
+
+    if(new_position > last_position_index){
+        new_position - last_position_index - 1
+    }else{
+        new_position
+    }
+}
+
 // -- Cells
+public fun cell_action_of(self: &Game, pos_idx: u64): Action{
+    self.cell_action[&pos_idx]
+}
 fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
     self.cells.borrow(pos_index)
 }
@@ -146,6 +177,9 @@ public fun borrow_cell_mut_with_request<Cell: key + store>(
     request: &ActionRequest
 ): &mut Cell {
     self.borrow_cell_mut(request.pos_index)
+}
+public fun num_of_cells(self: &Game): u64{
+    self.cells.length()
 }
 // -- ActionRequest
 public fun action_request_info(req: &ActionRequest): (address, u64, Action) {
@@ -214,11 +248,48 @@ entry fun add_cell<Cell: key + store>(
 
 // === Package Functions ===
 
-// fun player_move(
-//     turn_cap: TurnCap
-// ){
-//     todo!()
-// }
+entry fun player_move(
+    turn_cap: &mut TurnCap,
+    random: &Random,
+    ctx: &mut TxContext
+){
+    let mut generator = random::new_generator(random, ctx);
+    let moved_steps = random::generate_u8_in_range(&mut generator, 1, 12);
+    
+    turn_cap.moved_steps = moved_steps;
+
+    // emit the new position event
+}
+
+// executed by server
+public fun settle_player_move(
+    self: &mut Game,
+    turn_cap: TurnCap,
+    ctx: &mut TxContext
+){
+    let TurnCap{
+        id,
+        game,
+        player,
+        moved_steps,
+        // TODO: check expired time window
+        expired_at
+    } = turn_cap;
+    object::delete(id);
+
+    let player_new_pos = self.player_move_position(player, moved_steps);
+
+    let action_request = ActionRequest {
+        id: object::new(ctx),
+        game,
+        player,
+        pos_index: player_new_pos,
+        action: self.cell_action_of(player_new_pos),
+        settled: false,
+    };
+
+    transfer::transfer(action_request, player);
+}
 
 // === Private Functions ===
 fun new(
@@ -236,6 +307,7 @@ fun new(
         versions: vec_set::singleton(MODULE_VERSION),
         supported_assets: vec_set::empty(),
         player_assets: bag::new(ctx),
+        cell_action: vec_map::empty(),
         player_position: vec_map::from_keys_values(players, values),
         cells: object_bag::new(ctx),
         last_player,
@@ -250,6 +322,7 @@ fun drop(self: Game){
         versions: _,
         supported_assets: _,
         player_assets,
+        cell_action: _,
         cells,
         player_position: _,
         last_player: _,

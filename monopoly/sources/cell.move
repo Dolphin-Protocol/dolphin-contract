@@ -130,6 +130,7 @@ public fun execute_buy<T>(
 public fun settle_buy<T>(
     game: &mut Game,
     mut request: ActionRequest,
+    ctx: &mut TxContext
 ){
     let (player, pos_index, action) = request.action_request_info();
     assert!(request.action_request_action()== action::buyAction(), ENotBuyAction);
@@ -155,9 +156,9 @@ public fun settle_buy<T>(
 
     // update player's balance
     let payment = game.player_asset_mut_with_request<T>(&request).split(amount);
-    // consume ActionRequest and transfer new TurnCap
     game.deposit_fund(payment);
-
+    // consume ActionRequest and transfer new TurnCap
+    game.drop_action_request(request, ctx);
 }
 
 // public fun settle(
