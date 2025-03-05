@@ -11,6 +11,8 @@ use monopoly::monopoly::{ Game, ActionRequest, AdminCap };
 const ENotBuyAction: u64 = 100;
 const ENotMatchedCoinType: u64 = 101;
 const EIncorrectPrice: u64 = 102;
+const EInsufficientBalance: u64 = 103;
+const ENotSupportedBalance: u64 = 104;
 
 public struct House has store, copy{
     name: String,
@@ -112,9 +114,20 @@ public fun execute_buy<T>(
     payment: u64
 ){
     assert!(request.action_request_action() == action::buyAction(), ENotBuyAction);
+    
+    //TODO
+    // How can we acquire House price?
+    // through 1) immutable shared object or 2) ActionRequest
+
+    // validate balance
+    let player_balances = request.action_request_balances();
+    let type_name = type_name::get<T>();
+    
+    assert!(player_balances.contains(&type_name), ENotSupportedBalance);
+    assert!(player_balances[&type_name] >= payment, EInsufficientBalance);
 
     let arg = BuyArgument<T> {
-        type_name: type_name::get<T>(),
+        type_name,
         amount: payment,
     };
 
@@ -150,7 +163,7 @@ public fun settle_buy<T>(
     ctx: &mut TxContext
 ){
     let mut request = game.receive_action_request(received_request);
-    let (player, pos_index, action) = request.action_request_info();
+    let action = request.action_request_action();
     assert!(request.action_request_action()== action::buyAction(), ENotBuyAction);
 
     let BuyArgument<T>{
@@ -173,7 +186,7 @@ public fun settle_buy<T>(
     house.level = house.level + 1;
 
     // update player's balance
-    let payment = game.player_asset_mut_with_request<T>(&request).split(amount);
+    let payment = game.player_balance_mut_with_request<T>(&request).split(amount);
     game.deposit_fund(payment);
 
     // consume ActionRequest and transfer new TurnCap

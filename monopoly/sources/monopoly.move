@@ -2,16 +2,18 @@ module monopoly::monopoly;
 use std::string::{Self, String};
 use std::type_name::{Self, TypeName};
 
+use sui::clock::Clock;
 use sui::event;
 use sui::transfer::Receiving;
 use sui::random::{ Self, Random };
-use sui::balance::{Self, Balance};
+use sui::balance::{Self, Balance, Supply};
 use sui::bag::{Self, Bag};
 use sui::object_bag::{Self, ObjectBag};
 use sui::vec_map::{Self, VecMap};
 use sui::vec_set::{Self, VecSet};
 use sui::dynamic_field as df;
 
+use monopoly::balance_manager::{Self, BalanceManager};
 use monopoly::action::Action;
 
 // === Imports ===
@@ -23,6 +25,13 @@ const MODULE_VERSION: u64 = 1;
 
 const ENotExistPlayer: u64 = 101;
 const EActionRequestNotSettled: u64 = 102;
+const EUnMatchedCellSize: u64 = 103;
+const EGameShouldSupportAtLeastOneBalance: u64 = 104;
+const EPlayerNotSetup: u64 = 105;
+const EBalanceAlreadySetup: u64 = 106;
+const EActionRequestBalanceNotRecord: u64 = 107;
+const EAlreadyRecordPlayerAdssetOnRequest: u64 = 108;
+
 // === Structs ===
 
 public struct AdminCap has key {
@@ -32,9 +41,9 @@ public struct AdminCap has key {
 public struct Game has key{
     id: UID,
     versions: VecSet<u64>,
-    supported_assets: VecSet<TypeName>,
-    // TODO: mapping "${address}-${assets}"
-    player_assets: Bag,
+    // asset type records
+    assets: VecSet<TypeName>,
+    balances: Bag,
     /// players' positions and the order of player's turn
     player_position: VecMap<address, u64>,
     // cell_action; to check which action should player execute
@@ -42,7 +51,7 @@ public struct Game has key{
     /// positions of cells in the map
     /// Mapping<u64, T>
     cells: ObjectBag,
-    last_player: address,
+    current_player: address,
     last_action_time: u64,
     // times of each player do the actions
     plays: u64
@@ -58,6 +67,7 @@ public struct TurnCap has key {
     player: address,
     moved_steps: u8,
     ///f valid time window to allow user do the action
+    /// TODO
     expired_at: u64
 }
 
@@ -65,6 +75,7 @@ public struct ActionRequest has key {
     id: UID,
     game: ID,
     player: address,
+    balances: VecMap<TypeName, u64>,
     pos_index: u64,
     action: Action,
     settled: bool
@@ -80,6 +91,7 @@ public fun drop_action_request(
         id,
         game,
         player,
+        balances: _,
         pos_index: _,
         action: _,
         settled: _
@@ -108,53 +120,54 @@ public struct PlayerMoveEvent has copy, drop{
     turn_cap_id: ID
 }
 
+public struct ActionRequestEvent has copy, drop{
+    game: ID,
+    player: address,
+    balances: VecMap<TypeName, u64>,
+    new_pos_idx: u64,
+    action: Action
+}
+
 // === Method Aliases ===
+public use fun monopoly::cell::execute_buy as ActionRequest.execute_buy_action;
 
 // === Public Functions ===
-public fun supported_assets(self: &Game): VecSet<TypeName> {
-    self.supported_assets
+// -- balances
+fun balance<T>(self: &Game): &BalanceManager<T>{
+    &self.balances[type_name::get<T>()]
 }
-fun player_asset_key(asset_type: TypeName, owner: address): String{
-    let mut type_str = string::from_ascii(asset_type.into_string());
-    let address_str = owner.to_string();
-
-    type_str.append_utf8(b"-");
-    type_str.append(address_str);
-
-    type_str
+fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T>{
+    &mut self.balances[type_name::get<T>()]
 }
-public fun player_asset<T>(self: &Game, owner: address): &Balance<T>{
-    let asset_key = player_asset_key(type_name::get<T>(), owner);
-    &self.player_assets[asset_key]
+public fun player_balance<T>(self: &Game, player: address): &Balance<T>{
+    self.balance().balance_of(player)
 }
-fun player_asset_mut<T>(self: &mut Game, owner: address): &mut Balance<T>{
-    let asset_key = player_asset_key(type_name::get<T>(), owner);
-    &mut self.player_assets[asset_key]
+fun player_balance_mut<T>(self: &mut Game, player: address): &mut Balance<T>{
+    self.balance_mut().balance_of_mut(player)
 }
-public fun player_asset_mut_with_request<T>(
+public fun player_balance_mut_with_request<T>(
     self: &mut Game,
     request: &ActionRequest,
 ): &mut Balance<T>{
-    self.player_asset_mut(request.player)
+    self.player_balance_mut(request.player)
 }
-fun game_fund_mut<T>(self: &mut Game): &mut Balance<T> {
-    let game_address = object::id_address(self);
-    let asset_key = player_asset_key(type_name::get<T>(), game_address);
-
-    &mut self.player_assets[asset_key]
-}
-
 public fun deposit_fund<T>(
     self: &mut Game,
-    fund: Balance<T>
+    balance: Balance<T>
 ): u64{
-    self.game_fund_mut().join(fund)
-}
-// -- player_positions
-fun position_of(self: &Game, player: address): u64 {
-    self.player_position[&player]
+    self.balance_mut<T>().burn(balance)
 }
 
+// -- player_positions
+public fun players(self: &Game): vector<address>{
+    self.player_position.keys()
+}
+public fun num_of_players(self: &Game): u64{
+    self.players().length()
+}
+fun player_position(self: &Game): &VecMap<address, u64> {
+    &self.player_position
+}
 fun player_move_position(
     self: &mut Game,
     player: address,
@@ -190,22 +203,31 @@ public fun borrow_cell_mut_with_request<Cell: key + store>(
 public fun num_of_cells(self: &Game): u64{
     self.cells.length()
 }
+
 // -- ActionRequest
-public fun action_request_info(req: &ActionRequest): (address, u64, Action) {
+public fun action_request_info(req: &ActionRequest): (ID, address, VecMap<TypeName, u64>, u64, Action) {
     (
+        req.game,
         req.player,
+        req.balances,
         req.pos_index,
         req.action,
     )
+}
+public fun action_request_game(req: &ActionRequest): ID{
+    req.game
+}
+public fun action_request_player(req: &ActionRequest): address{
+    req.player
+}
+public fun action_request_balances(req: &ActionRequest): VecMap<TypeName, u64>{
+    req.balances
 }
 public fun action_request_pos_index(req: &ActionRequest): u64{
     req.pos_index
 }
 public fun action_request_action(req: &ActionRequest): Action{
     req.action
-}
-public fun action_request_game(req: &ActionRequest): ID{
-    req.game
 }
 public fun action_request_add_state<K: copy + drop + store, V: store>(
     req: &mut ActionRequest,
@@ -220,18 +242,23 @@ public fun action_request_remove_state<K: copy + drop + store, V: store>(
 ):V{
     df::remove(&mut req.id, state_key)
 }
-
+/// This function should be called at the end of each action
 public fun settle_action_request(request: &mut ActionRequest){
     request.settled = true;
 }
 
-// === View Functions ===
-public fun players(self: &Game): vector<address>{
-    self.player_position.keys()
+// --- TurnCap
+public fun turn_cap_game(turn_cap: &TurnCap):ID {
+    turn_cap.game
 }
-public fun num_of_players(self: &Game): u64{
-    self.players().length()
+public fun turn_cap_player(turn_cap: &TurnCap):address {
+    turn_cap.player
 }
+public fun turn_cap_moved_steps(turn_cap: &TurnCap):u8 {
+    turn_cap.moved_steps
+}
+
+// --- utils
 public fun current_round(self: &Game): u64{
     self.plays / self.num_of_players()
 }
@@ -246,6 +273,7 @@ public fun next_player_of(self: &Game, player: address): address{
     if(idx == last_index) players[0] else players[idx + 1]
 }
 
+
 // === Admin Functions ===
 fun init(ctx: &mut TxContext){
     let cap = AdminCap { id: object::new(ctx) };
@@ -257,6 +285,7 @@ public fun init_for_testing(ctx: &mut TxContext){
     init(ctx);
 }
 
+// TODO: where to import the Cell instance?
 public fun add_cell<Cell: key + store>(
     self: &mut Game,
     _cap: &AdminCap,
@@ -270,6 +299,13 @@ public fun add_cell<Cell: key + store>(
 }
 
 // === Package Functions ===
+
+/// create game instance
+/// steps to start each game round
+/// 1) determined the players and their order then acquire game instance
+/// 2) config supported assets by calling 'add_balance' with game object
+/// 3) add cell and corresponding action
+/// 4) call 'settle_game_creation' when all the configs are setup, then transfer game object to admin and TurnCap to first player
 public fun new(
     _cap: &AdminCap,
     players: vector<address>,
@@ -278,14 +314,61 @@ public fun new(
     new_(players, ctx)
 }
 
+public fun settle_game_creation(
+    mut self: Game,
+    _cap: &AdminCap,
+    recipient: address,
+    clock: &Clock,
+    ctx: &mut TxContext
+){
+    // validate if game instance finish setting up
+    assert!(self.num_of_cells() == self.cell_action.size(), EUnMatchedCellSize);
+    
+    // validate balances setup
+    assert!(!self.balances.is_empty(), EGameShouldSupportAtLeastOneBalance);
+    
+    // transfer TurnCap to first player
+    let player = self.current_player;
+    let turn_cap = TurnCap {
+        id: object::new(ctx),
+        game: object::id(&self),
+        player,
+        moved_steps: 0,
+        expired_at: 0,
+    };
+    transfer::transfer(turn_cap, player);
+
+    self.last_action_time = clock.timestamp_ms();
+
+    transfer::transfer(self, recipient);
+}
+
+/// add BalanceManager to balances and topup all the player's balances
+public fun setup_balance<T>(
+    self: &mut Game,
+    _cap: &AdminCap,
+    supply: Supply<T>,
+    initial_funds: u64,
+    ctx: &mut TxContext
+){
+    assert!(!self.player_position.is_empty(), EPlayerNotSetup);
+    assert!(!self.balances.contains(type_name::get<T>()), EBalanceAlreadySetup);
+
+    self.balances.add(type_name::get<T>(), balance_manager::new(supply, ctx));
+
+    self.player_position.keys().do!(|player|{
+        self.balance_mut<T>().add_balance(player, initial_funds);
+    });
+}
+
 entry fun player_move(
     mut turn_cap: TurnCap,
     random: &Random,
     ctx: &mut TxContext
-){
+): u8{
     let mut generator = random::new_generator(random, ctx);
     let moved_steps = random::generate_u8_in_range(&mut generator, 1, 12);
-    
+
     turn_cap.moved_steps = moved_steps;
 
     // emit the new position event
@@ -300,16 +383,18 @@ entry fun player_move(
     // transfer to game object
     let game_address = turn_cap.game.to_address();
     transfer::transfer(turn_cap, game_address);
+
+    moved_steps
 }
 
 // executed by server
-public fun settle_player_move(
+public fun request_player_move(
     self: &mut Game,
     receiving_turn_cap: Receiving<TurnCap>,
     ctx: &mut TxContext
-){
+):ActionRequest {
     let turn_cap = transfer::receive(&mut self.id, receiving_turn_cap);
-    let TurnCap{
+    let TurnCap {
         id,
         game,
         player,
@@ -320,17 +405,77 @@ public fun settle_player_move(
     object::delete(id);
 
     let player_new_pos = self.player_move_position(player, moved_steps);
+    let action = self.cell_action_of(player_new_pos);
 
-    let action_request = ActionRequest {
+    ActionRequest {
         id: object::new(ctx),
         game,
         player,
+        balances: vec_map::empty(),
         pos_index: player_new_pos,
-        action: self.cell_action_of(player_new_pos),
+        action,
         settled: false,
-    };
+    }
+}
+
+/// 'record_player_asset_on_request' & 'settle_player_move' should use together to achieve action_request settlement. If corresponding action (ex: chances, payment) don't require any user's further actions, we can settle the action_request with another customized functions to prevent account_request sent to player again
+public fun record_player_asset_on_request<T>(
+    self: &Game,
+    action_request: &mut ActionRequest
+){
+    let value = self.player_balance<T>(action_request.player).value();
+    let type_name = type_name::get<T>();
+
+    assert!(!action_request.balances.contains(&type_name), EAlreadyRecordPlayerAdssetOnRequest);
+    action_request.balances.insert(type_name, value);
+}
+
+public fun settle_player_move(
+    self: &Game,
+    action_request: ActionRequest,
+){
+    self.assets.keys().do_ref!(|key| assert!(action_request.balances.contains(key), EActionRequestBalanceNotRecord));
+
+    let (game, player, balances, new_pos_idx, action) = action_request.action_request_info();
+
+    event::emit(ActionRequestEvent {
+        game,
+        player,
+        balances,
+        new_pos_idx,
+        action,
+    });
 
     transfer::transfer(action_request, player);
+}
+#[test_only]
+public fun request_player_move_for_testing(
+    self: &mut Game,
+    turn_cap: TurnCap,
+    ctx: &mut TxContext
+):ActionRequest {
+    let TurnCap {
+        id,
+        game,
+        player,
+        moved_steps,
+        // TODO: check expired time window
+        expired_at
+    } = turn_cap;
+    object::delete(id);
+
+    let player_new_pos = self.player_move_position(player, moved_steps);
+    let action = self.cell_action_of(player_new_pos);
+
+    ActionRequest {
+        id: object::new(ctx),
+        game,
+        player,
+        balances: vec_map::empty(),
+        pos_index: player_new_pos,
+        action,
+        settled: false,
+    }
 }
 
 public fun finish_action(
@@ -349,7 +494,7 @@ public fun receive_action_request(
     transfer::receive(&mut self.id, received_request)
 }
 
-// === Private Functions ===
+// === Private Functions ===\
 fun new_(
     players: vector<address>,
     ctx: &mut TxContext
@@ -357,47 +502,38 @@ fun new_(
     let num_of_players = players.length();
 
     let mut values = vector<u64>[];
-    let last_player = players[num_of_players - 1];
+    let current_player = players[0];
     std::u64::do!<()>(num_of_players, |_|values.push_back(0));
     
     Game{
         id: object::new(ctx),
         versions: vec_set::singleton(MODULE_VERSION),
-        supported_assets: vec_set::empty(),
-        player_assets: bag::new(ctx),
+        assets: vec_set::empty(),
+        balances: bag::new(ctx),
         cell_action: vec_map::empty(),
         player_position: vec_map::from_keys_values(players, values),
         cells: object_bag::new(ctx),
-        last_player,
+        current_player,
         last_action_time: 0,
         plays: 0,
     }
 }
 
-public fun settle_game_creation(
-    game: Game,
-    _cap: &AdminCap,
-    recipient: address
-){
-    transfer::transfer(game, recipient);
-}
-
-
 fun drop(self: Game){
     let Game{
         id,
         versions: _,
-        supported_assets: _,
-        player_assets,
+        assets: _,
+        balances,
         cell_action: _,
         cells,
         player_position: _,
-        last_player: _,
+        current_player: _,
         last_action_time: _,
         plays: _
     } = self;
 
-    player_assets.destroy_empty();
+    balances.destroy_empty();
     cells.destroy_empty();
 
     object::delete(id);

@@ -2,12 +2,15 @@
 #[allow(unused)]
 module monopoly::monopoly_tests;
 use std::string::{Self, String};
+use std::type_name;
 
+use sui::random::{Self, Random};
+use sui::balance;
 use sui::vec_map::{Self, VecMap};
 use sui::clock::{Self, Clock};
 use sui::test_scenario::{Self as test, Scenario, next_tx, ctx};
 
-use monopoly::monopoly::{Self, AdminCap, Game};
+use monopoly::monopoly::{Self, AdminCap, Game, TurnCap, ActionRequest};
 use monopoly::cell::{ Self, HouseCell };
 use monopoly::action;
 
@@ -40,12 +43,15 @@ const PRICE_INFOS: vector<vector<u64>> = vector[
     vector[150, 450 ,1000],
 ];
 
+// Fabricated Balance Type
+public struct Monopoly has drop {}
+
 fun prices_by_level(): vector<VecMap<u8, u64>>{
     let price_infos = PRICE_INFOS;
     price_infos.map!(|price_info|{
         let mut prices_by_levels = vec_map::empty<u8, u64>();
 
-        0_u64.range_do!<()>(price_info.length(), |idx|{
+        price_info.length().do!<()>(|idx|{
             prices_by_levels.insert((idx as u8), price_info[idx]);
         });
 
@@ -64,49 +70,66 @@ fun setup(): (Scenario, Clock){
     let s = &mut scenario;
     let mut clock = clock::create_for_testing(ctx(s));
 
+    let initial_fund = 2000;
     let price_infos = prices_by_level();
 
     clock::set_for_testing(&mut clock, START_TIME); 
     tx_context::increment_epoch_timestamp(ctx(s), START_TIME);
-
     monopoly::init_for_testing(ctx(s));
 
-    s.next_tx(admin);{
-        let admin_cap = test::take_from_sender<AdminCap>(s);
-
-        let players = vector[b, c, d, e];
-
-        let mut game = admin_cap.new(players, ctx(s));
-        // we will have 20 cells in 6x6 board game
-        // setup game cells
-        0_u64.range_do!<()>(price_infos.length(), |idx|{
-            let price_info = price_infos[idx];
-            let (levels, prices) = price_info.into_keys_values();
-            let cell = cell::new_house_cell(string::utf8(b"name"), levels, prices, ctx(s));
-
-            let action = if(idx == 15){
-                action::jailAction()
-            }else if(idx % 5 == 0){
-                action::doNothingAction()
-            }else if(idx % 3 == 0){
-                action::chanceAction()
-            }else{
-                action::buyAction()
-            };
-
-            game.add_cell(&admin_cap, idx, cell, action);
-        });
-
-        game.settle_game_creation(&admin_cap, admin);
-
-        test::return_to_sender(s, admin_cap);
+    s.next_tx(@0x0);{
+        random::create_for_testing(ctx(s));
     };
 
     s.next_tx(admin);{
-        let game = test::take_from_sender<Game>(s);
+        let admin_cap = s.take_from_sender<AdminCap>();
 
+        // insert order determine plays order
+        let players = vector[b, c, d, e];
 
-        0_u64.range_do!<()>(game.num_of_cells(), |pos_index|{
+        let mut game = admin_cap.new(players, ctx(s));
+
+        // 1) cell setup
+        // we will have 20 cells in 6x6 board game
+        // setup game cells
+        {
+            price_infos.length().do!<()>(|idx|{
+                let price_info = price_infos[idx];
+                let (levels, prices) = price_info.into_keys_values();
+                let cell = cell::new_house_cell(string::utf8(b"name"), levels, prices, ctx(s));
+
+                // cells order
+                let action = if(idx == 15){
+                    action::jailAction()
+                }else if(idx % 5 == 0){
+                    action::doNothingAction()
+                }else if(idx % 4 == 0){
+                    action::chanceAction()
+                }else{
+                    action::buyAction()
+                };
+
+                game.add_cell(&admin_cap, idx, cell, action);
+            });
+        };
+
+        // 2) Balance setup
+        {
+            let supply = balance::create_supply(Monopoly{});
+            game.setup_balance<Monopoly>(&admin_cap, supply, initial_fund, ctx(s));
+        };
+
+        game.settle_game_creation(&admin_cap, admin, &clock, ctx(s));
+
+        s.return_to_sender(admin_cap);
+    };
+
+    s.next_tx(admin);
+    let game_id = {
+        let game = s.take_from_sender<Game>();
+
+        // check cells
+        game.num_of_cells().do!<()>(|pos_index|{
 
             let house_cell = game.borrow_cell<HouseCell>(pos_index);
 
@@ -119,7 +142,27 @@ fun setup(): (Scenario, Clock){
             test_utils::compare_vec_map(&prices, &price_info);
         });
 
-        test::return_to_sender(s, game);
+        // check balances
+        game.players().do!(|player|{
+            assert!(game.player_balance<Monopoly>(player).value() == initial_fund);
+        });
+
+        let game_id = object::id(&game);
+
+        s.return_to_sender(game);
+
+        game_id
+    };
+
+    // check first player recieve TurnCap
+    s.next_tx(b);{
+        let turn_cap = test::take_from_sender<TurnCap>(s);
+        
+        assert!(turn_cap.turn_cap_game() == game_id);
+        assert!(turn_cap.turn_cap_player() == b);
+        assert!(turn_cap.turn_cap_moved_steps() == 0);
+
+        s.return_to_sender(turn_cap);
     };
 
     (scenario, clock)
@@ -128,6 +171,50 @@ fun setup(): (Scenario, Clock){
 #[test]
 fun test_monopoly_basic(){
     let (mut scenario, mut clock) = setup();
+    let (admin, b, c, d, e) = people();
+    let s = &mut scenario;
+
+    // player B starts to play the gmae
+    s.next_tx(b);{
+        let random = s.take_shared<Random>();
+        let mut turn_cap = s.take_from_sender<TurnCap>();
+
+        // 1) roll the dice
+        let moved_steps = turn_cap.player_move(&random, ctx(s));
+        assert!(moved_steps == 9);
+
+        test::return_shared(random);
+    };
+
+    // server resolve the moving action and emit ActionRequest
+    s.next_tx(admin);
+    let game_id = {
+        let mut game = s.take_from_sender<Game>();
+        let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+        
+        let mut action_request = game.request_player_move_for_testing(turn_cap, ctx(s));
+        game.record_player_asset_on_request<Monopoly>(&mut action_request);
+        game.settle_player_move(action_request);
+        let game_id = object::id(&game);
+
+        s.return_to_sender(game);
+
+        game_id
+    };
+
+    // player_b acquires ActionRequest
+    s.next_tx(b);{
+        let action_request = s.take_from_sender<ActionRequest>();
+        let (game_id_, player, balances, new_pos_idx, action) = action_request.action_request_info();
+    
+        assert!(game_id == game_id_);
+        assert!(player == b);
+        assert!(balances == vec_map::from_keys_values(vector[type_name::get<Monopoly>()], vector[2000]));
+        assert!(new_pos_idx == 9);
+        assert!(action == action::buyAction());
+        
+        action_request.execute_buy_action<Monopoly>(0);
+    };
 
     scenario.end();
     clock.destroy_for_testing();

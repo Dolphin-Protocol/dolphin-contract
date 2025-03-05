@@ -33,7 +33,7 @@ public fun add_balance<T>(
     mut player: address,
     value: u64
 ):u64 {
-    if(self.balances.contains(&player)){
+    if(!self.balances.contains(&player)){
         self.balances.insert(player, balance::zero());
     };
 
@@ -46,7 +46,7 @@ public fun sub_balance<T>(
     mut player: address,
     value: u64
 ):u64 {
-    if(self.balances.contains(&player)){
+    if(!self.balances.contains(&player)){
         self.balances.insert(player, balance::zero());
     };
 
@@ -59,7 +59,7 @@ public fun saturating_sub_balance<T>(
     mut player: address,
     value: u64
 ): u64{
-    if(self.balances.contains(&player)){
+    if(!self.balances.contains(&player)){
         self.balances.insert(player, balance::zero());
     };
     
