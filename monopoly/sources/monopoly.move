@@ -29,7 +29,7 @@ public struct AdminCap has key {
     id: UID,
 }
 
-public struct Game has key, store {
+public struct Game has key{
     id: UID,
     versions: VecSet<u64>,
     supported_assets: VecSet<TypeName>,
@@ -175,7 +175,7 @@ fun player_move_position(
 public fun cell_action_of(self: &Game, pos_idx: u64): Action{
     self.cell_action[&pos_idx]
 }
-fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
+public fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
     self.cells.borrow(pos_index)
 }
 fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
@@ -237,7 +237,7 @@ public fun current_round(self: &Game): u64{
 }
 public fun next_player_of(self: &Game, player: address): address{
     let players = self.players();
-    let idx_opt = self.players().find_index!(|player_| player_ = &player);
+    let mut idx_opt = self.players().find_index!(|player_| player_ == &player);
 
     assert!(idx_opt.is_some(), ENotExistPlayer);
     let idx = idx_opt.extract();
@@ -252,20 +252,34 @@ fun init(ctx: &mut TxContext){
 
     transfer::transfer(cap, ctx.sender());
 }
+#[test_only]
+public fun init_for_testing(ctx: &mut TxContext){
+    init(ctx);
+}
 
-entry fun add_cell<Cell: key + store>(
+public fun add_cell<Cell: key + store>(
     self: &mut Game,
     _cap: &AdminCap,
     pos_index: u64,
-    cell: Cell
+    cell: Cell,
+    // TODO: should not hardcoded
+    action: Action
 ){
     self.cells.add(pos_index, cell);
+    self.cell_action.insert(pos_index, action);
 }
 
 // === Package Functions ===
+public fun new(
+    _cap: &AdminCap,
+    players: vector<address>,
+    ctx: &mut TxContext
+): Game {
+    new_(players, ctx)
+}
 
 entry fun player_move(
-    turn_cap: TurnCap,
+    mut turn_cap: TurnCap,
     random: &Random,
     ctx: &mut TxContext
 ){
@@ -284,7 +298,8 @@ entry fun player_move(
         }
     );
     // transfer to game object
-    transfer::transfer(turn_cap, turn_cap.game.to_address());
+    let game_address = turn_cap.game.to_address();
+    transfer::transfer(turn_cap, game_address);
 }
 
 // executed by server
@@ -323,7 +338,8 @@ public fun finish_action(
 ){
     assert!(request.settled, EActionRequestNotSettled);
 
-    transfer::transfer(request, request.game.to_address());
+    let game_address = request.game.to_address();
+    transfer::transfer(request, game_address);
 }
 
 public fun receive_action_request(
@@ -334,10 +350,10 @@ public fun receive_action_request(
 }
 
 // === Private Functions ===
-fun new(
+fun new_(
     players: vector<address>,
     ctx: &mut TxContext
-):Game {
+): Game {
     let num_of_players = players.length();
 
     let mut values = vector<u64>[];
@@ -357,6 +373,15 @@ fun new(
         plays: 0,
     }
 }
+
+public fun settle_game_creation(
+    game: Game,
+    _cap: &AdminCap,
+    recipient: address
+){
+    transfer::transfer(game, recipient);
+}
+
 
 fun drop(self: Game){
     let Game{
@@ -392,7 +417,7 @@ fun test_basic_game(){
     let player_b = @0xB;
     let player_c = @0xC;
 
-    let mut game = new(vector[player_a, player_b, player_c], &mut ctx);
+    let mut game = new_(vector[player_a, player_b, player_c], &mut ctx);
 
     std::u64::do!<()>(5, |_| game.roll_game());
 

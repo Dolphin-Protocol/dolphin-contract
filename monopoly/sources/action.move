@@ -3,23 +3,23 @@ module monopoly::action;
 
 public enum Action has copy, store, drop {
     Buy,
-    Pay,
     Jail,
-    Chance
+    Chance,
+    DoNothing
 }
 
 public(package) fun buyAction(): Action {
     Action::Buy
 }
 
-public(package) fun payAction(): Action {
-    Action::Pay
-}
-
 public(package) fun jailAction(): Action {
     Action::Jail
 }
 
-public(package) fun changeAction(): Action {
+public(package) fun chanceAction(): Action {
     Action::Chance
+}
+
+public(package) fun doNothingAction(): Action {
+    Action::DoNothing
 }

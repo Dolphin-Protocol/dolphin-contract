@@ -23,27 +23,11 @@ public struct HouseCell has key, store {
     house: House
 }
 
-public fun new_house_cell(
-    cell_registry: &CellRegistry,
-    name: String,
-    ctx: &mut TxContext
-):HouseCell{
-    let house = cell_registry.house_of(&name);
-    HouseCell {
-        id: object::new(ctx),
-        house
-    }
-}
-
 // Shared object to store all kinds of cell type
 public struct CellRegistry has key{
     id: UID,
     // mapping name to house object
     houses: VecMap<String, House>
-}
-
-public fun house_of(cell_registry: &CellRegistry, name: &String): House{
-    *&cell_registry.houses[name]
 }
 
 // -- Arguments for settling response
@@ -79,8 +63,33 @@ public struct ChanceArgument has store {
 // === Public Functions ===
 
 // === View Functions ===
+public fun house_info(house_cell: &HouseCell): (String, u8, VecMap<u8, u64>) {
+    (
+        house_cell.house.name,
+        house_cell.house.level,
+        house_cell.house.prices,
+    )
+}
 
 // === Admin Functions ===
+
+public fun new_house_cell(
+    name: String,
+    levels: vector<u8>,
+    prices_: vector<u64>,
+    ctx: &mut TxContext
+):HouseCell{
+    let house = House {
+        name,
+        level: 0,
+        prices: vec_map::from_keys_values(levels, prices_),
+    };
+    HouseCell {
+        id: object::new(ctx),
+        house
+    }
+}
+
 public fun add_house_to_registry(
     cell_registry: &mut CellRegistry,
     _cap: &AdminCap,
@@ -98,7 +107,8 @@ public fun add_house_to_registry(
 
 // === Package Functions ===
 public fun execute_buy<T>(
-    request: ActionRequest,
+    // TODO: should we have immutable shared object to lookup the price?
+    mut request: ActionRequest,
     payment: u64
 ){
     assert!(request.action_request_action() == action::buyAction(), ENotBuyAction);
@@ -139,7 +149,7 @@ public fun settle_buy<T>(
     received_request: Receiving<ActionRequest>,
     ctx: &mut TxContext
 ){
-    let request = game.receive_action_request(received_request);
+    let mut request = game.receive_action_request(received_request);
     let (player, pos_index, action) = request.action_request_info();
     assert!(request.action_request_action()== action::buyAction(), ENotBuyAction);
 
@@ -153,7 +163,7 @@ public fun settle_buy<T>(
     let house_cell = game.borrow_cell_mut_with_request<HouseCell>(&mut request);
     
     // retrieve house object
-    let house = house_cell.house;
+    let house = &mut house_cell.house;
     let price = house.prices[&(house.level + 1)];
 
     // validate price
