@@ -1,19 +1,24 @@
 module monopoly::cell;
-use std::string::{ Self, String };
+// === Imports ===
+use std::string::String;
 use std::type_name::{ Self, TypeName };
 
+use sui::event;
 use sui::vec_map::{ Self, VecMap };
 use sui::transfer::Receiving;
 
-use monopoly::action::{ Self, Action };
+use monopoly::action;
 use monopoly::monopoly::{ Game, ActionRequest, AdminCap };
 
+// === Errors ===
 const ENotBuyAction: u64 = 100;
-const ENotMatchedCoinType: u64 = 101;
+const EUnMatchedCoinType: u64 = 101;
 const EIncorrectPrice: u64 = 102;
-const EInsufficientBalance: u64 = 103;
-const ENotSupportedBalance: u64 = 104;
+const ENoParameterBody: u64 = 103;
+const EPlayerNotHouseOwner: u64 = 104;
+// === Constants ===
 
+// === Structs ===
 public struct House has store, copy{
     name: String,
     level: u8,
@@ -22,6 +27,7 @@ public struct House has store, copy{
 
 public struct HouseCell has key, store {
     id: UID,
+    owner: Option<address>,
     house: House
 }
 
@@ -33,36 +39,67 @@ public struct CellRegistry has key{
 }
 
 // -- Arguments for settling response
-public struct BuyArgument<phantom T> has store {
+public struct BuyArgument<phantom T> has copy, drop, store {
     type_name: TypeName,
-    amount: u64
+    player_balance: u64,
+    house_price: u64,
+    amount: Option<u64>
 }
 
 public struct PayArgument has store {
-
+    //TODO
 }
 
 public struct JailArgument has store {
-
+    //TODO
 }
 
 public struct ChanceArgument has store {
-
+    //TODO
 }
 
-// === Imports ===
-
-// === Errors ===
-
-// === Constants ===
-
-// === Structs ===
-
 // === Events ===
+public struct BuyActionSettledEvent has copy, drop{
+    game: ID,
+    action_request: ID,
+    player: address,
+    pos_index: u64,
+    type_name: TypeName,
+    payment: u64,
+    player_balance: u64,
+    house_price: u64
+}
 
 // === Method Aliases ===
 
 // === Public Functions ===
+public fun buy_argument_info<T>(buy_argument: &BuyArgument<T>):(TypeName, u64, u64, Option<u64>) {
+    (
+        buy_argument.type_name,
+        buy_argument.player_balance,
+        buy_argument.house_price,
+        buy_argument.amount,
+    )
+}
+public fun buy_argument_type_name<T>(buy_argument: &BuyArgument<T>): TypeName{
+    buy_argument.type_name
+}
+public fun buy_argument_player_balance<T>(buy_argument: &BuyArgument<T>): u64{
+    buy_argument.player_balance
+}
+public fun buy_argument_house_price<T>(buy_argument: &BuyArgument<T>): u64{
+    buy_argument.house_price
+}
+public fun buy_argument_amount<T>(buy_argument: &BuyArgument<T>): Option<u64>{
+    buy_argument.amount
+}
+
+public fun house_cell_owner(house_cell: &HouseCell): Option<address>{
+    house_cell.owner
+}
+public fun house_cell_house(house_cell: &HouseCell): &House{
+    &house_cell.house
+}
 
 // === View Functions ===
 public fun house_info(house_cell: &HouseCell): (String, u8, VecMap<u8, u64>) {
@@ -72,7 +109,15 @@ public fun house_info(house_cell: &HouseCell): (String, u8, VecMap<u8, u64>) {
         house_cell.house.prices,
     )
 }
-
+public fun house_name(house: &House): String{
+    house.name
+}
+public fun house_level(house: &House): u8{
+    house.level
+}
+public fun house_prices(house: &House): VecMap<u8, u64>{
+    house.prices
+}
 // === Admin Functions ===
 
 public fun new_house_cell(
@@ -88,6 +133,7 @@ public fun new_house_cell(
     };
     HouseCell {
         id: object::new(ctx),
+        owner: option::none(),
         house
     }
 }
@@ -108,11 +154,43 @@ public fun add_house_to_registry(
 }
 
 // === Package Functions ===
+
+// called after 'monopoly::request_player_move' to config the parameters
+public fun initialize_buy_params<T>(
+    action_request: &mut ActionRequest<BuyArgument<T>>,
+    game: &Game
+){
+    // retrieve related dynamic object
+    let house_cell:&HouseCell = game.borrow_cell_with_request(action_request);
+    
+    // retrieve house object
+    let house = &house_cell.house;
+    // price starts with level 1
+    let house_price = house.prices[&(house.level)];
+
+    // retrieve player balance
+    assert!(game.balance_type_contains<T>(), EUnMatchedCoinType);
+    let player_balance = game.player_balance<T>(action_request.action_request_player()).value();
+    let type_name = type_name::get<T>();
+
+    // TODO: this can be simplifed to only accept boolean value as the player only has either buy or do nothing 2 options, but we'll showcase how to customize more dynamic & complicated request body
+    // request parameters
+    let parameters = BuyArgument<T>{
+        type_name,
+        player_balance,
+        house_price,
+        amount: option::none(),
+    };
+
+    game.config_parameter(action_request, parameters);
+}
+
 public fun execute_buy<T>(
     // TODO: should we have immutable shared object to lookup the price?
-    mut request: ActionRequest,
-    payment: u64
+    mut request: ActionRequest<BuyArgument<T>>,
+    payment: Option<u64>
 ){
+    // TODO: to be ignored as we use generic type to handle the constraint
     assert!(request.action_request_action() == action::buyAction(), ENotBuyAction);
     
     //TODO
@@ -120,76 +198,142 @@ public fun execute_buy<T>(
     // through 1) immutable shared object or 2) ActionRequest
 
     // validate balance
-    let player_balances = request.action_request_balances();
     let type_name = type_name::get<T>();
     
-    assert!(player_balances.contains(&type_name), ENotSupportedBalance);
-    assert!(player_balances[&type_name] >= payment, EInsufficientBalance);
+    assert!(request.action_request_parameters().is_some(), ENoParameterBody);
 
-    let arg = BuyArgument<T> {
-        type_name,
-        amount: payment,
-    };
+    let parameters = request.action_request_parameters_mut().borrow_mut();
 
-    request.action_request_add_state(action::buyAction(), arg);
+    assert!(parameters.type_name == type_name, EUnMatchedCoinType);
 
-    // mark settled in action_request
+    // 1) skip the payment
+    // 2) pay for the house
+    assert!(payment.is_none() || (payment.is_some() && parameters.player_balance >= *payment.borrow()));
+
+    // fill the required parameters
+    parameters.amount = payment;
+
+    // mark settled in action_request to promise the action is ready to be sent
     request.settle_action_request();
 
     // transfer action to game object
     request.finish_action();
 }
 
-// public fun execute_pay<CoinType>(
-    // request: &mut ActionRequest,
-    // amount: u64,
-    // purchased_amount: u64
-// ){
-//     todo!()
-// }
-
-// public fun execute_jail<CoinType>(
-    // request: &mut ActionRequest,
-    // amount: u64,
-    // purchased_amount: u64
-// ){
-//     todo!()
-// }
-
 /// executed by server to settle the game state
 public fun settle_buy<T>(
+    mut received_request: Receiving<ActionRequest<BuyArgument<T>>>,
     game: &mut Game,
-    received_request: Receiving<ActionRequest>,
     ctx: &mut TxContext
 ){
     let mut request = game.receive_action_request(received_request);
     let action = request.action_request_action();
     assert!(request.action_request_action()== action::buyAction(), ENotBuyAction);
+    let player = request.action_request_player();
 
     let BuyArgument<T>{
         type_name,
-        amount
-    } = request.action_request_remove_state(action);
+        player_balance: _,
+        house_price: _,
+        mut amount
+    } = request.action_request_remove_parameters(game);
 
-    assert!(type_name::get<T>() == type_name, ENotMatchedCoinType);
+    assert!(type_name::get<T>() == type_name, EUnMatchedCoinType);
     
-    let house_cell = game.borrow_cell_mut_with_request<HouseCell>(&mut request);
-    
+    let house_cell:&mut HouseCell = game.borrow_cell_mut_with_request(&mut request);
+    // validate house ownersdhip
+    if(house_cell.owner.is_none()){
+        house_cell.owner.fill(player);
+    }else{
+        // this shuoldn't happen
+        assert!(house_cell.owner.borrow() == player, EPlayerNotHouseOwner);
+    };
+
     // retrieve house object
     let house = &mut house_cell.house;
-    let price = house.prices[&(house.level + 1)];
+    // price starts with level 1
+    let price = house.prices[&(house.level)];
 
     // validate price
-    assert!(amount == price, EIncorrectPrice);
+    if(amount.is_some()){
+        let payment = amount.extract();
+        assert!(payment == price, EIncorrectPrice);
 
-    // update house state
-    house.level = house.level + 1;
+        // update house state
+        house.level = house.level + 1;
 
-    // update player's balance
-    let payment = game.player_balance_mut_with_request<T>(&request).split(amount);
-    game.deposit_fund(payment);
+        // update player's balance
+        let balance_manager = game.balance_mut<T>();
+        let payment_value = balance_manager.sub_balance(request.action_request_player(), payment);
+    }else{
+        amount.destroy_none();
+    };
 
-    // consume ActionRequest and transfer new TurnCap
+    // consume ActionRequest and transfer new TurnCap to next player
+    game.drop_action_request(request, ctx);
+}
+
+#[test_only]
+public fun settle_buy_for_testing<T>(
+    mut request: ActionRequest<BuyArgument<T>>,
+    game: &mut Game,
+    ctx: &mut TxContext
+){
+    let (game_id, player, pos_index, action) = request.action_request_info();
+    assert!(request.action_request_action()== action::buyAction(), ENotBuyAction);
+
+    let BuyArgument<T>{
+        type_name,
+        player_balance,
+        house_price,
+        mut amount
+    } = request.action_request_remove_parameters(game);
+
+    assert!(type_name::get<T>() == type_name, EUnMatchedCoinType);
+    
+    let house_cell:&mut HouseCell = game.borrow_cell_mut_with_request(&mut request);
+    // validate house ownersdhip
+    if(house_cell.owner.is_none()){
+        house_cell.owner.fill(player);
+    }else{
+        // this shuoldn't happen
+        assert!(house_cell.owner.borrow() == player, EPlayerNotHouseOwner);
+    };
+
+    // retrieve house object
+    let house = &mut house_cell.house;
+    // price starts with level 1
+    let price = house.prices[&(house.level)];
+
+    // validate price
+    if(amount.is_some()){
+        let payment = amount.extract();
+        assert!(payment == price, EIncorrectPrice);
+
+        // update house state
+        house.level = house.level + 1;
+
+        // update player's balance
+        let balance_manager = game.balance_mut<T>();
+        balance_manager.sub_balance(request.action_request_player(), payment);
+
+        event::emit(
+            BuyActionSettledEvent {
+                game: game_id,
+                action_request: object::id(&request),
+                player,
+                pos_index,
+                type_name,
+                payment,
+                player_balance: game.player_balance<T>(player).value(),
+                house_price,
+            }
+        );
+    }else{
+        amount.destroy_none();
+    };
+
+    // consume ActionRequest and transfer new TurnCap to next player
     game.drop_action_request(request, ctx);
 }
 

@@ -1,12 +1,11 @@
 module monopoly::monopoly;
-use std::string::{Self, String};
 use std::type_name::{Self, TypeName};
 
 use sui::clock::Clock;
 use sui::event;
 use sui::transfer::Receiving;
 use sui::random::{ Self, Random };
-use sui::balance::{Self, Balance, Supply};
+use sui::balance::{Balance, Supply};
 use sui::bag::{Self, Bag};
 use sui::object_bag::{Self, ObjectBag};
 use sui::vec_map::{Self, VecMap};
@@ -15,6 +14,7 @@ use sui::dynamic_field as df;
 
 use monopoly::balance_manager::{Self, BalanceManager};
 use monopoly::action::Action;
+use monopoly::event::emit_action_request;
 
 // === Imports ===
 
@@ -31,6 +31,8 @@ const EPlayerNotSetup: u64 = 105;
 const EBalanceAlreadySetup: u64 = 106;
 const EActionRequestBalanceNotRecord: u64 = 107;
 const EAlreadyRecordPlayerAdssetOnRequest: u64 = 108;
+const EActionRequestParametersdNotConfig: u64 = 109;
+const EActionRequestAlreadyConfig: u64 = 110;
 
 // === Structs ===
 
@@ -71,30 +73,30 @@ public struct TurnCap has key {
     expired_at: u64
 }
 
-public struct ActionRequest has key {
+public struct ActionRequest<P: copy + drop + store> has key {
     id: UID,
     game: ID,
     player: address,
-    balances: VecMap<TypeName, u64>,
     pos_index: u64,
     action: Action,
+    parameters: Option<P>,
     settled: bool
 }
 
 /// Consume the action_request and transfer TurnCap
-public fun drop_action_request(
+public fun drop_action_request<P: copy + drop + store>(
     self: &mut Game,
-    action_request: ActionRequest,
+    action_request: ActionRequest<P>,
     ctx: &mut TxContext
 ){
     let ActionRequest{
         id,
         game,
         player,
-        balances: _,
         pos_index: _,
         action: _,
-        settled: _
+        settled: _,
+        parameters: _
     } = action_request;
 
     object::delete(id);
@@ -123,12 +125,12 @@ public struct PlayerMoveEvent has copy, drop{
 public struct ActionRequestEvent has copy, drop{
     game: ID,
     player: address,
-    balances: VecMap<TypeName, u64>,
     new_pos_idx: u64,
     action: Action
 }
 
 // === Method Aliases ===
+public use fun monopoly::cell::initialize_buy_params as ActionRequest.initialize_buy_params;
 public use fun monopoly::cell::execute_buy as ActionRequest.execute_buy_action;
 
 // === Public Functions ===
@@ -136,8 +138,11 @@ public use fun monopoly::cell::execute_buy as ActionRequest.execute_buy_action;
 fun balance<T>(self: &Game): &BalanceManager<T>{
     &self.balances[type_name::get<T>()]
 }
-fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T>{
+public fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T>{
     &mut self.balances[type_name::get<T>()]
+}
+public fun balance_type_contains<T>(self: &Game): bool{
+    self.balances.contains(type_name::get<T>())
 }
 public fun player_balance<T>(self: &Game, player: address): &Balance<T>{
     self.balance().balance_of(player)
@@ -145,9 +150,9 @@ public fun player_balance<T>(self: &Game, player: address): &Balance<T>{
 fun player_balance_mut<T>(self: &mut Game, player: address): &mut Balance<T>{
     self.balance_mut().balance_of_mut(player)
 }
-public fun player_balance_mut_with_request<T>(
+public fun player_balance_mut_with_request<T, P: copy + drop + store>(
     self: &mut Game,
-    request: &ActionRequest,
+    request: &ActionRequest<P>,
 ): &mut Balance<T>{
     self.player_balance_mut(request.player)
 }
@@ -194,9 +199,15 @@ public fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
 fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
     self.cells.borrow_mut(pos_index)
 }
-public fun borrow_cell_mut_with_request<Cell: key + store>(
+public fun borrow_cell_with_request<Cell: key + store, P: copy + drop + store>(
+    self: &Game,
+    request: &ActionRequest<P>
+): &Cell {
+    self.borrow_cell(request.pos_index)
+}
+public fun borrow_cell_mut_with_request<Cell: key + store, P: copy + drop + store>(
     self: &mut Game,
-    request: &ActionRequest
+    request: &ActionRequest<P>
 ): &mut Cell {
     self.borrow_cell_mut(request.pos_index)
 }
@@ -205,45 +216,53 @@ public fun num_of_cells(self: &Game): u64{
 }
 
 // -- ActionRequest
-public fun action_request_info(req: &ActionRequest): (ID, address, VecMap<TypeName, u64>, u64, Action) {
+public fun action_request_info<P: copy + drop + store>(req: &ActionRequest<P>): (ID, address, u64, Action) {
     (
         req.game,
         req.player,
-        req.balances,
         req.pos_index,
         req.action,
     )
 }
-public fun action_request_game(req: &ActionRequest): ID{
+public fun action_request_game<P: drop + copy + store>(req: &ActionRequest<P>): ID{
     req.game
 }
-public fun action_request_player(req: &ActionRequest): address{
+public fun action_request_player<P: drop + copy + store>(req: &ActionRequest<P>): address{
     req.player
 }
-public fun action_request_balances(req: &ActionRequest): VecMap<TypeName, u64>{
-    req.balances
-}
-public fun action_request_pos_index(req: &ActionRequest): u64{
+public fun action_request_pos_index<P: drop + copy + store>(req: &ActionRequest<P>): u64{
     req.pos_index
 }
-public fun action_request_action(req: &ActionRequest): Action{
+public fun action_request_action<P: drop + copy + store>(req: &ActionRequest<P>): Action{
     req.action
 }
-public fun action_request_add_state<K: copy + drop + store, V: store>(
-    req: &mut ActionRequest,
+public fun action_request_parameters<P: drop + copy + store>(req: &ActionRequest<P>): &Option<P>{
+    &req.parameters
+}
+public fun action_request_parameters_mut<P: drop + copy + store>(req: &mut ActionRequest<P>): &mut Option<P>{
+    &mut req.parameters
+}
+public fun action_request_remove_parameters<P: drop + copy + store>(req: &mut ActionRequest<P>, _self: &Game): P{
+    req.parameters.extract()
+}
+public fun action_request_settled<P: drop + copy + store>(req: &ActionRequest<P>): bool{
+    req.settled
+}
+public fun action_request_add_state<P: copy + drop + store, K: copy + drop + store, V: store>(
+    req: &mut ActionRequest<P>,
     state_key: K,
     state: V
 ){
     df::add(&mut req.id, state_key, state);
 }
-public fun action_request_remove_state<K: copy + drop + store, V: store>(
-    req: &mut ActionRequest,
+public fun action_request_remove_state<P: drop + copy + store, K: copy + drop + store, V: store>(
+    req: &mut ActionRequest<P>,
     state_key: K,
 ):V{
     df::remove(&mut req.id, state_key)
 }
 /// This function should be called at the end of each action
-public fun settle_action_request(request: &mut ActionRequest){
+public fun settle_action_request<P: drop + copy + store>(request: &mut ActionRequest<P>){
     request.settled = true;
 }
 
@@ -387,12 +406,12 @@ entry fun player_move(
     moved_steps
 }
 
-// executed by server
-public fun request_player_move(
+// should called by external module to config the required parameters
+public fun request_player_move<P: drop + copy + store>(
     self: &mut Game,
     receiving_turn_cap: Receiving<TurnCap>,
     ctx: &mut TxContext
-):ActionRequest {
+):ActionRequest<P> {
     let turn_cap = transfer::receive(&mut self.id, receiving_turn_cap);
     let TurnCap {
         id,
@@ -411,49 +430,19 @@ public fun request_player_move(
         id: object::new(ctx),
         game,
         player,
-        balances: vec_map::empty(),
         pos_index: player_new_pos,
         action,
+        parameters: option::none(),
         settled: false,
     }
 }
 
-/// 'record_player_asset_on_request' & 'settle_player_move' should use together to achieve action_request settlement. If corresponding action (ex: chances, payment) don't require any user's further actions, we can settle the action_request with another customized functions to prevent account_request sent to player again
-public fun record_player_asset_on_request<T>(
-    self: &Game,
-    action_request: &mut ActionRequest
-){
-    let value = self.player_balance<T>(action_request.player).value();
-    let type_name = type_name::get<T>();
-
-    assert!(!action_request.balances.contains(&type_name), EAlreadyRecordPlayerAdssetOnRequest);
-    action_request.balances.insert(type_name, value);
-}
-
-public fun settle_player_move(
-    self: &Game,
-    action_request: ActionRequest,
-){
-    self.assets.keys().do_ref!(|key| assert!(action_request.balances.contains(key), EActionRequestBalanceNotRecord));
-
-    let (game, player, balances, new_pos_idx, action) = action_request.action_request_info();
-
-    event::emit(ActionRequestEvent {
-        game,
-        player,
-        balances,
-        new_pos_idx,
-        action,
-    });
-
-    transfer::transfer(action_request, player);
-}
 #[test_only]
-public fun request_player_move_for_testing(
+public fun request_player_move_for_testing<P: copy + drop + store>(
     self: &mut Game,
     turn_cap: TurnCap,
     ctx: &mut TxContext
-):ActionRequest {
+):ActionRequest<P> {
     let TurnCap {
         id,
         game,
@@ -471,15 +460,38 @@ public fun request_player_move_for_testing(
         id: object::new(ctx),
         game,
         player,
-        balances: vec_map::empty(),
         pos_index: player_new_pos,
         action,
+        parameters: option::none(),
         settled: false,
     }
 }
 
-public fun finish_action(
-    request: ActionRequest
+public fun config_parameter<P: copy + drop + store>(
+    _self: &Game,
+    action_request: &mut ActionRequest<P>,
+    parameters: P
+){
+    assert!(action_request.parameters.is_none(), EActionRequestAlreadyConfig);
+    action_request.parameters.fill(parameters);
+}
+
+public fun settle_player_move<P: copy + drop + store>(
+    _self: &Game,
+    mut action_request: ActionRequest<P>,
+){
+    // check all the balances have been stamped
+    assert!(action_request.parameters.is_some(), EActionRequestParametersdNotConfig);
+
+    let (game, player, new_pos_idx, action) = action_request.action_request_info();
+
+    emit_action_request<P>(game, player, new_pos_idx, action, *action_request.parameters.borrow());
+
+    transfer::transfer(action_request, player);
+}
+
+public fun finish_action<P: copy + drop + store>(
+    request: ActionRequest<P>
 ){
     assert!(request.settled, EActionRequestNotSettled);
 
@@ -487,10 +499,10 @@ public fun finish_action(
     transfer::transfer(request, game_address);
 }
 
-public fun receive_action_request(
+public fun receive_action_request<P: copy + drop + store>(
     self: &mut Game,
-    received_request: Receiving<ActionRequest>,
-):ActionRequest{
+    received_request: Receiving<ActionRequest<P>>,
+):ActionRequest<P>{
     transfer::receive(&mut self.id, received_request)
 }
 
