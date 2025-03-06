@@ -138,6 +138,7 @@ public fun new_house_cell(
     }
 }
 
+// TODO: do we need this Functions?
 public fun add_house_to_registry(
     cell_registry: &mut CellRegistry,
     _cap: &AdminCap,

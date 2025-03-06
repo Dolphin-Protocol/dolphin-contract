@@ -476,11 +476,10 @@ public fun config_parameter<P: copy + drop + store>(
     action_request.parameters.fill(parameters);
 }
 
-public fun settle_player_move<P: copy + drop + store>(
+public fun request_player_action<P: copy + drop + store>(
     _self: &Game,
     mut action_request: ActionRequest<P>,
 ){
-    // check all the balances have been stamped
     assert!(action_request.parameters.is_some(), EActionRequestParametersdNotConfig);
 
     let (game, player, new_pos_idx, action) = action_request.action_request_info();
@@ -559,7 +558,7 @@ fun roll_game(self: &mut Game){
 
 
 #[test]
-fun test_basic_game(){
+fun test_roll_game(){
     let mut ctx = tx_context::dummy();
     let player_a = @0xA;
     let player_b = @0xB;

@@ -84,7 +84,7 @@ fun setup(): (Scenario, Clock){
     s.next_tx(admin);{
         let admin_cap = s.take_from_sender<AdminCap>();
 
-        // insert order determine plays order
+        // order insetion determine plays order
         let players = vector[b, c, d, e];
 
         let mut game = admin_cap.new(players, ctx(s));
@@ -130,7 +130,6 @@ fun setup(): (Scenario, Clock){
 
         // check cells
         game.num_of_cells().do!<()>(|pos_index|{
-
             let house_cell = game.borrow_cell<HouseCell>(pos_index);
 
             let (name, level, prices) = house_cell.house_info();
@@ -193,10 +192,9 @@ fun test_monopoly_basic(){
         let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
         // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-        
         let mut action_request = game.request_player_move_for_testing<BuyArgument<Monopoly>>(turn_cap, ctx(s));
         action_request.initialize_buy_params(&game);
-        game.settle_player_move(action_request);
+        game.request_player_action(action_request);
         let game_id = object::id(&game);
 
         s.return_to_sender(game);
@@ -204,7 +202,7 @@ fun test_monopoly_basic(){
         game_id
     };
 
-    // player_b acquires ActionRequest and executee "buy_action"
+    // player_b acquires ActionRequest and executee "buy_action" by required parameters
     s.next_tx(b);{
         let action_request = s.take_from_sender<ActionRequest<BuyArgument<Monopoly>>>();
         let (game_id_, player, new_pos_idx, action) = action_request.action_request_info();
@@ -258,6 +256,20 @@ fun test_monopoly_basic(){
 
         s.return_to_sender(game);
     };
+    
+    // player C starts next round
+    s.next_tx(c);{
+        let random = s.take_shared<Random>();
+        let mut turn_cap = s.take_from_sender<TurnCap>();
+
+        // 1) roll the dice
+        let moved_steps = turn_cap.player_move(&random, ctx(s));
+        // this is the chanceAction
+        assert!(moved_steps == 4);
+
+        test::return_shared(random);
+    };
+
 
     scenario.end();
     clock.destroy_for_testing();
