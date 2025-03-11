@@ -11,7 +11,6 @@ public struct BalanceManager<phantom T> has key, store{
     balances: VecMap<address, Balance<T>>
 }
 
-
 public fun new<T>(supply: Supply<T>, ctx: &mut TxContext): BalanceManager<T> {
     BalanceManager{
         id: object::new(ctx),

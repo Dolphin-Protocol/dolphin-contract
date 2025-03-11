@@ -13,7 +13,6 @@ use sui::vec_set::{Self, VecSet};
 use sui::dynamic_field as df;
 
 use monopoly::balance_manager::{Self, BalanceManager};
-use monopoly::action::Action;
 use monopoly::event::emit_action_request;
 
 // === Imports ===
@@ -48,8 +47,6 @@ public struct Game has key{
     balances: Bag,
     /// players' positions and the order of player's turn
     player_position: VecMap<address, u64>,
-    // cell_action; to check which action should player execute
-    cell_action: VecMap<u64, Action>,
     /// positions of cells in the map
     /// Mapping<u64, T>
     cells: ObjectBag,
@@ -78,7 +75,6 @@ public struct ActionRequest<P: copy + drop + store> has key {
     game: ID,
     player: address,
     pos_index: u64,
-    action: Action,
     parameters: Option<P>,
     settled: bool
 }
@@ -94,12 +90,13 @@ public fun drop_action_request<P: copy + drop + store>(
         game,
         player,
         pos_index: _,
-        action: _,
         settled: _,
         parameters: _
     } = action_request;
 
     object::delete(id);
+
+    // TODO: (By Paul): Check if the game has finished. 
 
     let next_player = self.next_player_of(player);
 
@@ -126,12 +123,11 @@ public struct ActionRequestEvent has copy, drop{
     game: ID,
     player: address,
     new_pos_idx: u64,
-    action: Action
 }
 
 // === Method Aliases ===
-public use fun monopoly::cell::initialize_buy_params as ActionRequest.initialize_buy_params;
-public use fun monopoly::cell::execute_buy as ActionRequest.execute_buy_action;
+public use fun monopoly::house_cell::initialize_buy_params as ActionRequest.initialize_buy_params;
+public use fun monopoly::house_cell::execute_buy as ActionRequest.execute_buy_action;
 
 // === Public Functions ===
 // -- balances
@@ -190,9 +186,6 @@ fun player_move_position(
 }
 
 // -- Cells
-public fun cell_action_of(self: &Game, pos_idx: u64): Action{
-    self.cell_action[&pos_idx]
-}
 public fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
     self.cells.borrow(pos_index)
 }
@@ -216,12 +209,11 @@ public fun num_of_cells(self: &Game): u64{
 }
 
 // -- ActionRequest
-public fun action_request_info<P: copy + drop + store>(req: &ActionRequest<P>): (ID, address, u64, Action) {
+public fun action_request_info<P: copy + drop + store>(req: &ActionRequest<P>): (ID, address, u64) {
     (
         req.game,
         req.player,
         req.pos_index,
-        req.action,
     )
 }
 public fun action_request_game<P: drop + copy + store>(req: &ActionRequest<P>): ID{
@@ -233,9 +225,7 @@ public fun action_request_player<P: drop + copy + store>(req: &ActionRequest<P>)
 public fun action_request_pos_index<P: drop + copy + store>(req: &ActionRequest<P>): u64{
     req.pos_index
 }
-public fun action_request_action<P: drop + copy + store>(req: &ActionRequest<P>): Action{
-    req.action
-}
+
 public fun action_request_parameters<P: drop + copy + store>(req: &ActionRequest<P>): &Option<P>{
     &req.parameters
 }
@@ -305,16 +295,14 @@ public fun init_for_testing(ctx: &mut TxContext){
 }
 
 // TODO: where to import the Cell instance?
-public fun add_cell<Cell: key + store>(
+public fun add_cell< CellType: key + store>(
     self: &mut Game,
     _cap: &AdminCap,
     pos_index: u64,
-    cell: Cell,
+    cell: CellType,
     // TODO: should not hardcoded
-    action: Action
 ){
     self.cells.add(pos_index, cell);
-    self.cell_action.insert(pos_index, action);
 }
 
 // === Package Functions ===
@@ -339,10 +327,7 @@ public fun settle_game_creation(
     recipient: address,
     clock: &Clock,
     ctx: &mut TxContext
-){
-    // validate if game instance finish setting up
-    assert!(self.num_of_cells() == self.cell_action.size(), EUnMatchedCellSize);
-    
+){    
     // validate balances setup
     assert!(!self.balances.is_empty(), EGameShouldSupportAtLeastOneBalance);
     
@@ -424,14 +409,12 @@ public fun request_player_move<P: drop + copy + store>(
     object::delete(id);
 
     let player_new_pos = self.player_move_position(player, moved_steps);
-    let action = self.cell_action_of(player_new_pos);
 
     ActionRequest {
         id: object::new(ctx),
         game,
         player,
         pos_index: player_new_pos,
-        action,
         parameters: option::none(),
         settled: false,
     }
@@ -454,14 +437,12 @@ public fun request_player_move_for_testing<P: copy + drop + store>(
     object::delete(id);
 
     let player_new_pos = self.player_move_position(player, moved_steps);
-    let action = self.cell_action_of(player_new_pos);
 
     ActionRequest {
         id: object::new(ctx),
         game,
         player,
         pos_index: player_new_pos,
-        action,
         parameters: option::none(),
         settled: false,
     }
@@ -478,13 +459,13 @@ public fun config_parameter<P: copy + drop + store>(
 
 public fun request_player_action<P: copy + drop + store>(
     _self: &Game,
-    mut action_request: ActionRequest<P>,
+    action_request: ActionRequest<P>,
 ){
     assert!(action_request.parameters.is_some(), EActionRequestParametersdNotConfig);
 
-    let (game, player, new_pos_idx, action) = action_request.action_request_info();
+    let (game, player, new_pos_idx) = action_request.action_request_info();
 
-    emit_action_request<P>(game, player, new_pos_idx, action, *action_request.parameters.borrow());
+    emit_action_request<P>(game, player, new_pos_idx, *action_request.parameters.borrow());
 
     transfer::transfer(action_request, player);
 }
@@ -521,7 +502,6 @@ fun new_(
         versions: vec_set::singleton(MODULE_VERSION),
         assets: vec_set::empty(),
         balances: bag::new(ctx),
-        cell_action: vec_map::empty(),
         player_position: vec_map::from_keys_values(players, values),
         cells: object_bag::new(ctx),
         current_player,
@@ -536,7 +516,6 @@ fun drop(self: Game){
         versions: _,
         assets: _,
         balances,
-        cell_action: _,
         cells,
         player_position: _,
         current_player: _,
