@@ -1,15 +1,15 @@
 module monopoly::cell {
-    use monopoly::monopoly::{Game, ActionRequest, AdminCap};
-    use std::{option, string::String, type_name::{Self, TypeName}};
-    use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};
+    use std::string::String;
 
     // === Errors ===
+
     // === Constants ===
-    const VERSION: u64 = 1;
 
     // === Structs ===
+
     public struct Cell has key, store {
         id: UID,
+        name: String,
     }
 
     // === Events ===
@@ -24,15 +24,17 @@ module monopoly::cell {
 
     // === Admin Functions ===
 
+    // === Package Functions ===
+
+    // === Private Functions ===
+
+    // === Test Functions ===
+
     // create a new house cell
-    public fun new_cell(ctx: &mut TxContext): Cell {
+    public fun new_cell(name: String, ctx: &mut TxContext): Cell {
         Cell {
             id: object::new(ctx),
+            name,
         }
     }
 }
-
-// === Package Functions ===
-
-// === Private Functions ===
-// === Test Functions ===
