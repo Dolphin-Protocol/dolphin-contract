@@ -16,6 +16,13 @@ module monopoly::monopoly_tests {
         vec_map::{Self, VecMap}
     };
 
+    fun people(): (address, address, address, address, address) {
+        (@0xA, @0xB, @0xC, @0xD, @0xE)
+    }
+
+    // Fabricated Balance Type
+    public struct Monopoly has drop {}
+
     const START_TIME: u64 = 1000_000;
 
     // ref: https://www.falstad.com/monopoly.html
@@ -92,34 +99,29 @@ module monopoly::monopoly_tests {
     ];
 
     fun names(): vector<String> {
-        let mut names = vector::empty<String>();
-
-        names.push_back(string::utf8(b"0"));
-        names.push_back(string::utf8(b"1"));
-        names.push_back(string::utf8(b"2"));
-        names.push_back(string::utf8(b"3"));
-        names.push_back(string::utf8(b"4"));
-        names.push_back(string::utf8(b"5"));
-        names.push_back(string::utf8(b"6"));
-        names.push_back(string::utf8(b"7"));
-        names.push_back(string::utf8(b"8"));
-        names.push_back(string::utf8(b"9"));
-        // 11
-        names.push_back(string::utf8(b"10"));
-        names.push_back(string::utf8(b"11"));
-        names.push_back(string::utf8(b"12"));
-        names.push_back(string::utf8(b"13"));
-        names.push_back(string::utf8(b"14"));
-        names.push_back(string::utf8(b"15"));
-        names.push_back(string::utf8(b"16"));
-        names.push_back(string::utf8(b"17"));
-        names.push_back(string::utf8(b"18"));
-        names.push_back(string::utf8(b"19"));
-        names
+        vector[
+            string::utf8(b"0"),
+            string::utf8(b"1"),
+            string::utf8(b"2"),
+            string::utf8(b"3"),
+            string::utf8(b"4"),
+            string::utf8(b"5"),
+            string::utf8(b"6"),
+            string::utf8(b"7"),
+            string::utf8(b"8"),
+            string::utf8(b"9"),
+            string::utf8(b"10"),
+            string::utf8(b"11"),
+            string::utf8(b"12"),
+            string::utf8(b"13"),
+            string::utf8(b"14"),
+            string::utf8(b"15"),
+            string::utf8(b"16"),
+            string::utf8(b"17"),
+            string::utf8(b"18"),
+            string::utf8(b"19"),
+        ]
     }
-
-    // Fabricated Balance Type
-    public struct Monopoly has drop {}
 
     fun prices_by_level(): (
         vector<VecMap<u8, u64>>,
@@ -157,10 +159,6 @@ module monopoly::monopoly_tests {
             }))
     }
 
-    fun people(): (address, address, address, address, address) {
-        (@0xA, @0xB, @0xC, @0xD, @0xE)
-    }
-
     fun setup(): (Scenario, Clock) {
         let (admin, b, c, d, e) = people();
 
@@ -169,8 +167,6 @@ module monopoly::monopoly_tests {
         let mut clock = clock::create_for_testing(ctx(s));
 
         let initial_fund = 2000;
-        let (buy_prices, sell_prices, tolls) = prices_by_level();
-        let names = names();
 
         clock::set_for_testing(&mut clock, START_TIME);
         tx_context::increment_epoch_timestamp(ctx(s), START_TIME);
@@ -196,6 +192,8 @@ module monopoly::monopoly_tests {
             // setup game cells
             {
                 // set up registry
+                let names = names();
+                let (buy_prices, sell_prices, tolls) = prices_by_level();
                 let mut house_registry = s.take_shared<house_cell::HouseRegistry>();
                 buy_prices.length().do!<u64>(|idx: u64| {
                     let buy_price = buy_prices[idx];
@@ -218,16 +216,15 @@ module monopoly::monopoly_tests {
 
                 20u64.do!<u64>(|idx: u64| {
                     // cells order
-                    if (idx == 5 || idx == 15) {
-                        let cell = cell::new_cell(ctx(s));
-                        game.add_cell(&admin_cap, idx, cell);
-                    } else if (idx % 5 == 0) {
-                        let cell = cell::new_cell(ctx(s));
+                    let name = *names.borrow(idx);
+                    if (idx % 5 == 0) {
+                        // cells at the corner are empty
+                        let cell = cell::new_cell(name, ctx(s));
                         game.add_cell(&admin_cap, idx, cell);
                     } else {
                         let cell = house_cell::new_house_cell(
                             &house_registry,
-                            *names.borrow(idx),
+                            name,
                             ctx(s),
                         );
                         game.add_cell(&admin_cap, idx, cell);
@@ -252,11 +249,17 @@ module monopoly::monopoly_tests {
         let game_id = {
             let game = s.take_from_sender<Game>();
             // check cells
-            game.num_of_cells().do!<()>(|pos_index| {
+
+            let num_of_cells = game.num_of_cells();
+            assert!(num_of_cells == 20);
+
+            num_of_cells.do!<()>(|pos_index| {
                 if (pos_index % 5 == 0) {
-                    game.borrow_cell<Cell>(pos_index);
+                    assert!(game.cell_contains_with_type<Cell>(pos_index));
                 } else {
-                    game.borrow_cell<HouseCell>(pos_index);
+                    assert!(game.cell_contains_with_type<HouseCell>(pos_index));
+                    let house_cell = house_cell::borrow_house_cell_from_game(&game, pos_index);
+                    test_utils::assert_house_cell_basic(house_cell, option::none(), 0, pos_index.to_string());
                 };
             });
 

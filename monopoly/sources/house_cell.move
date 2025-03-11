@@ -4,22 +4,28 @@ module monopoly::house_cell {
     use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};
 
     // === Errors ===
+
     const ENotBuyAction: u64 = 100;
     const EUnMatchedCoinType: u64 = 101;
     const EIncorrectPrice: u64 = 102;
     const ENoParameterBody: u64 = 103;
     const EPlayerNotHouseOwner: u64 = 104;
+
     // === Constants ===
+
     const VERSION: u64 = 1;
+
     // === Structs ===
 
     public struct HouseRegistry has key {
         id: UID,
         versions: VecSet<u64>,
+        // house object with its name
         houses: VecMap<String, House>,
     }
 
     public struct House has copy, store {
+        // TODO: maybe img_url stored in url?
         buy_prices: VecMap<u8, u64>,
         sell_prices: VecMap<u8, u64>,
         tolls: VecMap<u8, u64>,
@@ -45,15 +51,8 @@ module monopoly::house_cell {
         //TODO
     }
 
-    public struct JailArgument has store {
-        //TODO
-    }
-
-    public struct ChanceArgument has store {
-        //TODO
-    }
-
     // === Events ===
+
     public struct BuyActionSettledEvent has copy, drop {
         game: ID,
         action_request: ID,
@@ -68,6 +67,7 @@ module monopoly::house_cell {
     // === Method Aliases ===
 
     // === Init Function ===
+
     fun init(ctx: &mut TxContext) {
         let registry = HouseRegistry {
             id: object::new(ctx),
@@ -78,7 +78,29 @@ module monopoly::house_cell {
         transfer::share_object(registry);
     }
 
-    // === Public Functions ===
+    // === Mutable Functions ===
+
+    // === View Functions ===
+    // Get house info from house cell
+    public fun house(house_cell: &HouseCell): (VecMap<u8, u64>, VecMap<u8, u64>, VecMap<u8, u64>) {
+        (house_cell.house.buy_prices, house_cell.house.sell_prices, house_cell.house.tolls)
+    }
+
+    // Get level from house cell
+    public fun level(self: &HouseCell): u8 {
+        self.level
+    }
+
+    // Get owner from house cell
+    public fun owner(self: &HouseCell): Option<address> {
+        self.owner
+    }
+
+    // Get name from house cell
+    public fun name(self: &HouseCell): String {
+        self.name
+    }
+
     public fun buy_argument_info<T>(
         buy_argument: &BuyArgument<T>,
     ): (TypeName, u64, u64, Option<u64>) {
@@ -88,6 +110,18 @@ module monopoly::house_cell {
             buy_argument.house_price,
             buy_argument.amount,
         )
+    }
+
+    public fun buy_prices(self: &HouseCell): &VecMap<u8, u64> {
+        &self.house.buy_prices
+    }
+
+    public fun sell_prices(self: &HouseCell): &VecMap<u8, u64> {
+        &self.house.sell_prices
+    }
+
+    public fun tolls(self: &HouseCell): &VecMap<u8, u64> {
+        &self.house.tolls
     }
 
     public fun buy_argument_type_name<T>(buy_argument: &BuyArgument<T>): TypeName {
@@ -114,25 +148,8 @@ module monopoly::house_cell {
         &house_cell.house
     }
 
-    // === View Functions ===
-    // Get house info from house cell
-    public fun house(house_cell: &HouseCell): (VecMap<u8, u64>, VecMap<u8, u64>, VecMap<u8, u64>) {
-        (house_cell.house.buy_prices, house_cell.house.sell_prices, house_cell.house.tolls)
-    }
-
-    // Get level from house cell
-    public fun level(self: &HouseCell): u8 {
-        self.level
-    }
-
-    // Get owner from house cell
-    public fun owner(self: &HouseCell): Option<address> {
-        self.owner
-    }
-
-    // Get name from house cell
-    public fun name(self: &HouseCell): String {
-        self.name
+    public fun borrow_house_cell_from_game(game: &Game, pos_index: u64): &HouseCell {
+        game.borrow_cell(pos_index)
     }
 
     // === Admin Functions ===
@@ -201,7 +218,7 @@ module monopoly::house_cell {
         _cap: &AdminCap,
         name: String,
     ) {
-        let (name, house) = registry.houses.remove(&name);
+        let (_, house) = registry.houses.remove(&name);
         let House {
             buy_prices: _,
             sell_prices: _,
@@ -241,17 +258,7 @@ module monopoly::house_cell {
         game.config_parameter(action_request, parameters);
     }
 
-    public fun execute_buy<T>(
-        // TODO: should we have immutable shared object to lookup the price?
-        mut request: ActionRequest<BuyArgument<T>>,
-        payment: Option<u64>,
-    ) {
-        // TODO: to be ignored as we use generic type to handle the constraint
-
-        //TODO
-        // How can we acquire House price?
-        // through 1) immutable shared object or 2) ActionRequest
-
+    public fun execute_buy<T>(mut request: ActionRequest<BuyArgument<T>>, payment: Option<u64>) {
         // validate balance
         let type_name = type_name::get<T>();
 
@@ -392,50 +399,6 @@ module monopoly::house_cell {
         // consume ActionRequest and transfer new TurnCap to next player
         game.drop_action_request(request, ctx);
     }
-
-    // public fun settle(
-    //     game: &mut Game,
-    //     mut request: ActionRequest,
-    // ){
-    //     let action = request.action_request_action();
-    //
-    //     let buy_action = action::buyAction();
-    //     let pay_action = action::payAction();
-    //     let jail_action = action::jailAction();
-    //     let chance_action = action::changeAction();
-    //
-    //     match(action){
-    //         buy_action => {
-    //             let BuyArgument{
-    //                 type_name,
-    //                 amount,
-    //             } = request.action_request_remove_state(buy_action);
-    //         },
-    //         pay_action => {
-    //             let PayArgument{
-    //                 // type_name,
-    //                 // amount,
-    //                 // purchased_amount
-    //             } = request.action_request_remove_state(pay_action);
-    //         },
-    //         jail_action => {
-    //             let JailArgument{
-    //                 // type_name,
-    //                 // amount,
-    //                 // purchased_amount
-    //             } = request.action_request_remove_state(jail_action);
-    //         },
-    //         chance_action => {
-    //             let ChanceArgument{
-    //                 // type_name,
-    //                 // amount,
-    //                 // purchased_amount
-    //             } = request.action_request_remove_state(jail_action);
-    //         },
-    //     };
-    //
-    //     request.drop_action_request();
-    // }
 
     // === Private Functions ===
     fun copy_house(self: &HouseRegistry, name: String): House {

@@ -23,12 +23,9 @@ module monopoly::monopoly {
 
     const ENotExistPlayer: u64 = 101;
     const EActionRequestNotSettled: u64 = 102;
-    const EUnMatchedCellSize: u64 = 103;
     const EGameShouldSupportAtLeastOneBalance: u64 = 104;
     const EPlayerNotSetup: u64 = 105;
     const EBalanceAlreadySetup: u64 = 106;
-    const EActionRequestBalanceNotRecord: u64 = 107;
-    const EAlreadyRecordPlayerAdssetOnRequest: u64 = 108;
     const EActionRequestParametersdNotConfig: u64 = 109;
     const EActionRequestAlreadyConfig: u64 = 110;
 
@@ -129,14 +126,9 @@ module monopoly::monopoly {
         ActionRequest.initialize_buy_params;
     public use fun monopoly::house_cell::execute_buy as ActionRequest.execute_buy_action;
 
-    // === Public Functions ===
-    // -- balances
-    fun balance<T>(self: &Game): &BalanceManager<T> {
+    // === View Functions ===
+    public fun balance<T>(self: &Game): &BalanceManager<T> {
         &self.balances[type_name::get<T>()]
-    }
-
-    public fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T> {
-        &mut self.balances[type_name::get<T>()]
     }
 
     public fun balance_type_contains<T>(self: &Game): bool {
@@ -147,22 +139,6 @@ module monopoly::monopoly {
         self.balance().balance_of(player)
     }
 
-    fun player_balance_mut<T>(self: &mut Game, player: address): &mut Balance<T> {
-        self.balance_mut().balance_of_mut(player)
-    }
-
-    public fun player_balance_mut_with_request<T, P: copy + drop + store>(
-        self: &mut Game,
-        request: &ActionRequest<P>,
-    ): &mut Balance<T> {
-        self.player_balance_mut(request.player)
-    }
-
-    public fun deposit_fund<T>(self: &mut Game, balance: Balance<T>): u64 {
-        self.balance_mut<T>().burn(balance)
-    }
-
-    // -- player_positions
     public fun players(self: &Game): vector<address> {
         self.player_position.keys()
     }
@@ -171,29 +147,16 @@ module monopoly::monopoly {
         self.players().length()
     }
 
-    fun player_position(self: &Game): &VecMap<address, u64> {
+    public fun player_position(self: &Game): &VecMap<address, u64> {
         &self.player_position
     }
 
-    fun player_move_position(self: &mut Game, player: address, moved_steps: u8): u64 {
-        let current_position = self.player_position[&player];
-        let new_position = current_position + (moved_steps as u64);
-        let last_position_index = self.num_of_cells() - 1;
-
-        if (new_position > last_position_index) {
-            new_position - last_position_index - 1
-        } else {
-            new_position
-        }
+    public fun cell_contains_with_type<Cell: key + store>(self: &Game, pos_index: u64): bool {
+        self.cells.contains_with_type<u64, Cell>(pos_index)
     }
 
-    // -- Cells
     public fun borrow_cell<Cell: key + store>(self: &Game, pos_index: u64): &Cell {
         self.cells.borrow(pos_index)
-    }
-
-    fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
-        self.cells.borrow_mut(pos_index)
     }
 
     public fun borrow_cell_with_request<Cell: key + store, P: copy + drop + store>(
@@ -203,18 +166,10 @@ module monopoly::monopoly {
         self.borrow_cell(request.pos_index)
     }
 
-    public fun borrow_cell_mut_with_request<Cell: key + store, P: copy + drop + store>(
-        self: &mut Game,
-        request: &ActionRequest<P>,
-    ): &mut Cell {
-        self.borrow_cell_mut(request.pos_index)
-    }
-
     public fun num_of_cells(self: &Game): u64 {
         self.cells.length()
     }
 
-    // -- ActionRequest
     public fun action_request_info<P: copy + drop + store>(
         req: &ActionRequest<P>,
     ): (ID, address, u64) {
@@ -239,6 +194,65 @@ module monopoly::monopoly {
         &req.parameters
     }
 
+    public fun action_request_settled<P: drop + copy + store>(req: &ActionRequest<P>): bool {
+        req.settled
+    }
+
+    public fun turn_cap_game(turn_cap: &TurnCap): ID {
+        turn_cap.game
+    }
+
+    public fun turn_cap_player(turn_cap: &TurnCap): address {
+        turn_cap.player
+    }
+
+    public fun turn_cap_moved_steps(turn_cap: &TurnCap): u8 {
+        turn_cap.moved_steps
+    }
+
+    public fun current_round(self: &Game): u64 {
+        self.plays / self.num_of_players()
+    }
+
+    public fun next_player_of(self: &Game, player: address): address {
+        let players = self.players();
+        let mut idx_opt = self.players().find_index!(|player_| player_ == &player);
+
+        assert!(idx_opt.is_some(), ENotExistPlayer);
+        let idx = idx_opt.extract();
+        let last_index = players.length() - 1;
+
+        if (idx == last_index) players[0] else players[idx + 1]
+    }
+
+    // === Mutable Functions ===
+
+    public fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T> {
+        &mut self.balances[type_name::get<T>()]
+    }
+
+    fun player_balance_mut<T>(self: &mut Game, player: address): &mut Balance<T> {
+        self.balance_mut().balance_of_mut(player)
+    }
+
+    public fun player_balance_mut_with_request<T, P: copy + drop + store>(
+        self: &mut Game,
+        request: &ActionRequest<P>,
+    ): &mut Balance<T> {
+        self.player_balance_mut(request.player)
+    }
+
+    fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
+        self.cells.borrow_mut(pos_index)
+    }
+
+    public fun borrow_cell_mut_with_request<Cell: key + store, P: copy + drop + store>(
+        self: &mut Game,
+        request: &ActionRequest<P>,
+    ): &mut Cell {
+        self.borrow_cell_mut(request.pos_index)
+    }
+
     public fun action_request_parameters_mut<P: drop + copy + store>(
         req: &mut ActionRequest<P>,
     ): &mut Option<P> {
@@ -250,10 +264,6 @@ module monopoly::monopoly {
         _self: &Game,
     ): P {
         req.parameters.extract()
-    }
-
-    public fun action_request_settled<P: drop + copy + store>(req: &ActionRequest<P>): bool {
-        req.settled
     }
 
     public fun action_request_add_state<P: copy + drop + store, K: copy + drop + store, V: store>(
@@ -280,35 +290,6 @@ module monopoly::monopoly {
         request.settled = true;
     }
 
-    // --- TurnCap
-    public fun turn_cap_game(turn_cap: &TurnCap): ID {
-        turn_cap.game
-    }
-
-    public fun turn_cap_player(turn_cap: &TurnCap): address {
-        turn_cap.player
-    }
-
-    public fun turn_cap_moved_steps(turn_cap: &TurnCap): u8 {
-        turn_cap.moved_steps
-    }
-
-    // --- utils
-    public fun current_round(self: &Game): u64 {
-        self.plays / self.num_of_players()
-    }
-
-    public fun next_player_of(self: &Game, player: address): address {
-        let players = self.players();
-        let mut idx_opt = self.players().find_index!(|player_| player_ == &player);
-
-        assert!(idx_opt.is_some(), ENotExistPlayer);
-        let idx = idx_opt.extract();
-        let last_index = players.length() - 1;
-
-        if (idx == last_index) players[0] else players[idx + 1]
-    }
-
     // === Admin Functions ===
     fun init(ctx: &mut TxContext) {
         let cap = AdminCap { id: object::new(ctx) };
@@ -320,13 +301,11 @@ module monopoly::monopoly {
         init(ctx);
     }
 
-    // TODO: where to import the Cell instance?
     public fun add_cell<CellType: key + store>(
         self: &mut Game,
         _cap: &AdminCap,
         pos_index: u64,
         cell: CellType,
-        // TODO: should not hardcoded
     ) {
         self.cells.add(pos_index, cell);
     }
@@ -542,6 +521,18 @@ module monopoly::monopoly {
 
     fun roll_game(self: &mut Game) {
         self.plays = self.plays + 1;
+    }
+
+    fun player_move_position(self: &mut Game, player: address, moved_steps: u8): u64 {
+        let current_position = self.player_position[&player];
+        let new_position = current_position + (moved_steps as u64);
+        let last_position_index = self.num_of_cells() - 1;
+
+        if (new_position > last_position_index) {
+            new_position - last_position_index - 1
+        } else {
+            new_position
+        }
     }
 
     // === Test Functions ===
