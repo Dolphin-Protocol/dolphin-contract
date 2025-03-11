@@ -1,41 +1,34 @@
-module monopoly::cell;
-// === Imports ===
-use std::string::String;
-use std::type_name::{ Self, TypeName };
-use std::option::{Self};
+module monopoly::cell {
+    use monopoly::monopoly::{Game, ActionRequest, AdminCap};
+    use std::{option, string::String, type_name::{Self, TypeName}};
+    use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};
 
-use sui::event;
-use sui::vec_map::{ Self, VecMap };
-use sui::vec_set::{Self, VecSet};
-use sui::transfer::Receiving;
-use monopoly::monopoly::{ Game, ActionRequest, AdminCap };
+    // === Errors ===
+    // === Constants ===
+    const VERSION: u64 = 1;
 
-// === Errors ===
-// === Constants ===
-const VERSION: u64 = 1;
-// === Structs ===
-public struct Cell has key, store {
-    id: UID,
-}
+    // === Structs ===
+    public struct Cell has key, store {
+        id: UID,
+    }
 
-// === Events ===
+    // === Events ===
 
-// === Method Aliases === 
+    // === Method Aliases ===
 
-// === Init Function ===
+    // === Init Function ===
 
-// === Public Functions ===
+    // === Public Functions ===
 
-// === View Functions ===
+    // === View Functions ===
 
-// === Admin Functions ===
+    // === Admin Functions ===
 
-// create a new house cell
-public fun new_cell(
-    ctx: &mut TxContext
-):Cell{
-    Cell {
-        id: object::new(ctx),
+    // create a new house cell
+    public fun new_cell(ctx: &mut TxContext): Cell {
+        Cell {
+            id: object::new(ctx),
+        }
     }
 }
 
