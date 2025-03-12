@@ -4,7 +4,6 @@ module monopoly::monopoly {
     use sui::{
         bag::{Self, Bag},
         balance::{Balance, Supply},
-        clock::Clock,
         dynamic_field as df,
         event,
         object_bag::{Self, ObjectBag},
@@ -48,8 +47,6 @@ module monopoly::monopoly {
         /// positions of cells in the map
         /// Mapping<u64, T>
         cells: ObjectBag,
-        current_player: address,
-        last_action_time: u64,
         // times of each player do the actions
         plays: u64,
         // skip player's turn when he is in jail
@@ -94,6 +91,10 @@ module monopoly::monopoly {
     }
 
     // === Method Aliases ===
+    // cell
+    public use fun monopoly::cell::initialize_do_nothing_params as
+        ActionRequest.initialize_do_nothing_params;
+    // house_cell
     public use fun monopoly::house_cell::initialize_buy_params as
         ActionRequest.initialize_buy_params;
     public use fun monopoly::house_cell::execute_buy as ActionRequest.execute_buy_action;
@@ -145,6 +146,8 @@ module monopoly::monopoly {
     public fun num_of_cells(self: &Game): u64 {
         self.cells.length()
     }
+
+    public fun plays(self: &Game): u64 { self.plays }
 
     public fun action_request_info<P: copy + drop + store>(
         req: &ActionRequest<P>,
@@ -303,14 +306,12 @@ module monopoly::monopoly {
         mut self: Game,
         _cap: &AdminCap,
         recipient: address,
-        clock: &Clock,
         ctx: &mut TxContext,
     ) {
         // validate balances setup
         assert!(!self.balances.is_empty(), EGameShouldSupportAtLeastOneBalance);
-
+        let player = self.players()[0];
         // transfer TurnCap to first player
-        let player = self.current_player;
         let turn_cap = TurnCap {
             id: object::new(ctx),
             game: object::id(&self),
@@ -319,8 +320,6 @@ module monopoly::monopoly {
             expired_at: 0,
         };
         transfer::transfer(turn_cap, player);
-
-        self.last_action_time = clock.timestamp_ms();
 
         transfer::transfer(self, recipient);
     }
@@ -483,6 +482,8 @@ module monopoly::monopoly {
         } = action_request;
 
         object::delete(id);
+        // increase plays count by 1
+        self.roll_game();
 
         let mut next_player = self.next_player_of(player);
 
@@ -516,7 +517,6 @@ module monopoly::monopoly {
         let num_of_players = players.length();
 
         let mut values = vector<u64>[];
-        let current_player = players[0];
         std::u64::do!<()>(num_of_players, |_| values.push_back(0));
 
         Game {
@@ -527,8 +527,6 @@ module monopoly::monopoly {
             balances: bag::new(ctx),
             player_position: vec_map::from_keys_values(players, values),
             cells: object_bag::new(ctx),
-            current_player,
-            last_action_time: 0,
             plays: 0,
             skips: vec_map::empty(),
         }
@@ -543,8 +541,6 @@ module monopoly::monopoly {
             balances,
             cells,
             player_position: _,
-            current_player: _,
-            last_action_time: _,
             plays: _,
             skips: _,
         } = self;
