@@ -39,6 +39,7 @@ module monopoly::monopoly {
     public struct Game has key {
         id: UID,
         versions: VecSet<u64>,
+        max_round: u64,
         // asset type records
         assets: VecSet<TypeName>,
         balances: Bag,
@@ -51,6 +52,8 @@ module monopoly::monopoly {
         last_action_time: u64,
         // times of each player do the actions
         plays: u64,
+        // skip player's turn when he is in jail
+        skips: VecMap<address, u8>,
     }
 
     public struct CellAccess has key, store {
@@ -74,41 +77,6 @@ module monopoly::monopoly {
         pos_index: u64,
         parameters: Option<P>,
         settled: bool,
-    }
-
-    /// Consume the completed action_request and transfer TurnCap
-    public fun drop_action_request<P: copy + drop + store>(
-        self: &mut Game,
-        action_request: ActionRequest<P>,
-        ctx: &mut TxContext,
-    ) {
-        assert!(action_request.settled, EActionRequestNotSettled);
-
-        let ActionRequest {
-            id,
-            game,
-            player,
-            pos_index: _,
-            settled: _,
-            parameters: _,
-        } = action_request;
-
-        object::delete(id);
-
-        // TODO: (By Paul): Check if the game has finished.
-        // TODO: (By Jarek): Check if the player is eligible for next round; otherwise skip
-
-        let next_player = self.next_player_of(player);
-
-        let turn_cap = TurnCap {
-            id: object::new(ctx),
-            game,
-            player: next_player,
-            moved_steps: 0,
-            expired_at: 0,
-        };
-
-        transfer::transfer(turn_cap, next_player);
     }
 
     // === Events ===
@@ -155,7 +123,7 @@ module monopoly::monopoly {
         &self.player_position
     }
 
-    public fun player_position_of(self: &Game, player: address):u64{
+    public fun player_position_of(self: &Game, player: address): u64 {
         self.player_position()[&player]
     }
 
@@ -250,7 +218,7 @@ module monopoly::monopoly {
         self.player_balance_mut(request.player)
     }
 
-    fun update_player_position(self: &mut Game, mut player: address, new_pos_idx: u64){
+    fun update_player_position(self: &mut Game, mut player: address, new_pos_idx: u64) {
         *&mut self.player_position[&mut player] = new_pos_idx;
     }
 
@@ -322,8 +290,13 @@ module monopoly::monopoly {
     /// 2) config supported assets by calling 'add_balance' with game object
     /// 3) add cell and corresponding action
     /// 4) call 'settle_game_creation' when all the configs are setup, then transfer game object to admin and TurnCap to first player
-    public fun new(_cap: &AdminCap, players: vector<address>, ctx: &mut TxContext): Game {
-        new_(players, ctx)
+    public fun new(
+        _cap: &AdminCap,
+        players: vector<address>,
+        max_round: u64,
+        ctx: &mut TxContext,
+    ): Game {
+        new_(players, max_round, ctx)
     }
 
     public fun settle_game_creation(
@@ -492,8 +465,54 @@ module monopoly::monopoly {
         transfer::receive(&mut self.id, received_request)
     }
 
+    /// Consume the completed action_request and transfer TurnCap
+    public fun drop_action_request<P: copy + drop + store>(
+        self: &mut Game,
+        action_request: ActionRequest<P>,
+        ctx: &mut TxContext,
+    ) {
+        assert!(action_request.settled, EActionRequestNotSettled);
+
+        let ActionRequest {
+            id,
+            game,
+            player,
+            pos_index: _,
+            settled: _,
+            parameters: _,
+        } = action_request;
+
+        object::delete(id);
+
+        let mut next_player = self.next_player_of(player);
+
+        // check if next_player is in skip list
+        if (self.skips.contains(&next_player)) {
+            // skips should always larger than 1
+            *&mut self.skips[&next_player] = self.skips[&next_player] - 1;
+            self.roll_game();
+
+            if (self.skips[&next_player] == 0) {
+                self.skips.remove(&next_player);
+            };
+        };
+
+        if (self.current_round() == self.max_round) {} else {
+            // next rounds
+            let turn_cap = TurnCap {
+                id: object::new(ctx),
+                game,
+                player: next_player,
+                moved_steps: 0,
+                expired_at: 0,
+            };
+
+            transfer::transfer(turn_cap, next_player);
+        };
+    }
+
     // === Private Functions ===\
-    fun new_(players: vector<address>, ctx: &mut TxContext): Game {
+    fun new_(players: vector<address>, max_round: u64, ctx: &mut TxContext): Game {
         let num_of_players = players.length();
 
         let mut values = vector<u64>[];
@@ -503,6 +522,7 @@ module monopoly::monopoly {
         Game {
             id: object::new(ctx),
             versions: vec_set::singleton(MODULE_VERSION),
+            max_round,
             assets: vec_set::empty(),
             balances: bag::new(ctx),
             player_position: vec_map::from_keys_values(players, values),
@@ -510,6 +530,7 @@ module monopoly::monopoly {
             current_player,
             last_action_time: 0,
             plays: 0,
+            skips: vec_map::empty(),
         }
     }
 
@@ -517,6 +538,7 @@ module monopoly::monopoly {
         let Game {
             id,
             versions: _,
+            max_round: _,
             assets: _,
             balances,
             cells,
@@ -524,6 +546,7 @@ module monopoly::monopoly {
             current_player: _,
             last_action_time: _,
             plays: _,
+            skips: _,
         } = self;
 
         balances.destroy_empty();
@@ -557,7 +580,7 @@ module monopoly::monopoly {
         let player_b = @0xB;
         let player_c = @0xC;
 
-        let mut game = new_(vector[player_a, player_b, player_c], &mut ctx);
+        let mut game = new_(vector[player_a, player_b, player_c], 12, &mut ctx);
 
         std::u64::do!<()>(5, |_| game.roll_game());
 

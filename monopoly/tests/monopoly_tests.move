@@ -184,8 +184,9 @@ module monopoly::monopoly_tests {
 
             // order insetion determine plays order
             let players = vector[b, c, d, e];
+            let max_rounds = 12;
 
-            let mut game = admin_cap.new(players, ctx(s));
+            let mut game = admin_cap.new(players, max_rounds, ctx(s));
 
             // 1) cell setup
             // we will have 20 cells in 6x6 board game
