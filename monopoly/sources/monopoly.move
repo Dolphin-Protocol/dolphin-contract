@@ -39,6 +39,7 @@ module monopoly::monopoly {
         id: UID,
         versions: VecSet<u64>,
         max_round: u64,
+        salary: u64,
         // asset type records
         assets: VecSet<TypeName>,
         balances: Bag,
@@ -297,9 +298,10 @@ module monopoly::monopoly {
         _cap: &AdminCap,
         players: vector<address>,
         max_round: u64,
+        salary: u64,
         ctx: &mut TxContext,
     ): Game {
-        new_(players, max_round, ctx)
+        new_(players, max_round, salary, ctx)
     }
 
     public fun settle_game_creation(
@@ -375,27 +377,27 @@ module monopoly::monopoly {
     }
 
     // should called by external module to config the required parameters
-    public fun request_player_move<P: drop + copy + store>(
+    public fun request_player_move<T, P: drop + copy + store>(
         self: &mut Game,
         receiving_turn_cap: Receiving<TurnCap>,
         ctx: &mut TxContext,
     ): ActionRequest<P> {
         let turn_cap = transfer::receive(&mut self.id, receiving_turn_cap);
 
-        request_player_move_<P>(self, turn_cap, ctx)
+        request_player_move_<T, P>(self, turn_cap, ctx)
     }
 
     // since testing doesn't allow acquire Receiving object, we create additional interface for testing
     #[test_only]
-    public fun request_player_move_for_testing<P: copy + drop + store>(
+    public fun request_player_move_for_testing<T, P: copy + drop + store>(
         self: &mut Game,
         turn_cap: TurnCap,
         ctx: &mut TxContext,
     ): ActionRequest<P> {
-        request_player_move_<P>(self, turn_cap, ctx)
+        request_player_move_<T, P>(self, turn_cap, ctx)
     }
 
-    fun request_player_move_<P: copy + drop + store>(
+    fun request_player_move_<T, P: copy + drop + store>(
         self: &mut Game,
         turn_cap: TurnCap,
         ctx: &mut TxContext,
@@ -410,8 +412,16 @@ module monopoly::monopoly {
         } = turn_cap;
         object::delete(id);
 
+        let prev_pos_idx = self.player_position_of(player);
+
         let player_new_pos = self.player_move_position(player, moved_steps);
         self.update_player_position(player, player_new_pos);
+
+        // salary rewards
+        if (prev_pos_idx != 0 && prev_pos_idx < self.num_of_cells() && player_new_pos < prev_pos_idx) {
+            let salary = self.salary;
+            self.balance_mut<T>().add_balance(player, salary);
+        };
 
         ActionRequest {
             id: object::new(ctx),
@@ -513,7 +523,7 @@ module monopoly::monopoly {
     }
 
     // === Private Functions ===\
-    fun new_(players: vector<address>, max_round: u64, ctx: &mut TxContext): Game {
+    fun new_(players: vector<address>, max_round: u64, salary: u64, ctx: &mut TxContext): Game {
         let num_of_players = players.length();
 
         let mut values = vector<u64>[];
@@ -523,6 +533,7 @@ module monopoly::monopoly {
             id: object::new(ctx),
             versions: vec_set::singleton(MODULE_VERSION),
             max_round,
+            salary,
             assets: vec_set::empty(),
             balances: bag::new(ctx),
             player_position: vec_map::from_keys_values(players, values),
@@ -537,6 +548,7 @@ module monopoly::monopoly {
             id,
             versions: _,
             max_round: _,
+            salary: _,
             assets: _,
             balances,
             cells,
@@ -576,7 +588,7 @@ module monopoly::monopoly {
         let player_b = @0xB;
         let player_c = @0xC;
 
-        let mut game = new_(vector[player_a, player_b, player_c], 12, &mut ctx);
+        let mut game = new_(vector[player_a, player_b, player_c], 12, 100, &mut ctx);
 
         std::u64::do!<()>(5, |_| game.roll_game());
 

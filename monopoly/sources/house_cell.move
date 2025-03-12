@@ -234,8 +234,7 @@ module monopoly::house_cell {
 
     // called after 'monopoly::request_player_move' to config the parameters
     public fun initialize_buy_params<T>(
-        action_request: &mut ActionRequest<BuyArgument<T>>,
-        game: &Game,
+        action_request: &mut ActionRequest<BuyArgument<T>>, game: &Game,
     ) {
         // retrieve related dynamic object
         let house_cell: &HouseCell = game.borrow_cell_with_request(action_request);
