@@ -259,7 +259,12 @@ module monopoly::monopoly_tests {
                 } else {
                     assert!(game.cell_contains_with_type<HouseCell>(pos_index));
                     let house_cell = house_cell::borrow_house_cell_from_game(&game, pos_index);
-                    test_utils::assert_house_cell_basic(house_cell, option::none(), 0, pos_index.to_string());
+                    test_utils::assert_house_cell_basic(
+                        house_cell,
+                        option::none(),
+                        0,
+                        pos_index.to_string(),
+                    );
                 };
             });
 
@@ -347,16 +352,16 @@ module monopoly::monopoly_tests {
             assert!(buy_argument_opt.is_some());
 
             let buy_argument = buy_argument_opt.borrow();
-            let (type_name, player_balance, house_price, amount) = buy_argument.buy_argument_info();
+            let (type_name, player_balance, house_price, purchased) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 70);
-            assert!(amount == option::none());
+            assert!(purchased == false);
 
             // settle action request then send the respone back to server
             let payment = 70;
             // action request has been sent to game object
-            action_request.execute_buy_action(option::some(payment));
+            action_request.execute_buy_action(true);
         };
 
         s.next_tx(admin);
@@ -371,16 +376,17 @@ module monopoly::monopoly_tests {
             assert!(buy_argument_opt.is_some());
 
             let buy_argument = buy_argument_opt.borrow();
-            let (type_name, player_balance, house_price, amount) = buy_argument.buy_argument_info();
+            let (type_name, player_balance, house_price, purchased) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 70);
-            assert!(amount == option::some(70));
+            assert!(purchased == true);
             // server settled buy action state
             house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
-            // check player balance & house
+            // check player balance, house, pos_index
             let player_balance = game.player_balance<Monopoly>(b).value();
             assert!(player_balance == 2000 - 70);
+            assert!(game.player_position_of(b) == 9);
 
             let house_cell: &HouseCell = game.borrow_cell<HouseCell>(9);
             assert!(house_cell.house_cell_owner().extract() == b);

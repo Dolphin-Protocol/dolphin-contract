@@ -23,6 +23,7 @@ module monopoly::monopoly {
 
     const ENotExistPlayer: u64 = 101;
     const EActionRequestNotSettled: u64 = 102;
+    const EActionRequestAlreadySettled: u64 = 103;
     const EGameShouldSupportAtLeastOneBalance: u64 = 104;
     const EPlayerNotSetup: u64 = 105;
     const EBalanceAlreadySetup: u64 = 106;
@@ -75,12 +76,14 @@ module monopoly::monopoly {
         settled: bool,
     }
 
-    /// Consume the action_request and transfer TurnCap
+    /// Consume the completed action_request and transfer TurnCap
     public fun drop_action_request<P: copy + drop + store>(
         self: &mut Game,
         action_request: ActionRequest<P>,
         ctx: &mut TxContext,
     ) {
+        assert!(action_request.settled, EActionRequestNotSettled);
+
         let ActionRequest {
             id,
             game,
@@ -93,6 +96,7 @@ module monopoly::monopoly {
         object::delete(id);
 
         // TODO: (By Paul): Check if the game has finished.
+        // TODO: (By Jarek): Check if the player is eligible for next round; otherwise skip
 
         let next_player = self.next_player_of(player);
 
@@ -149,6 +153,10 @@ module monopoly::monopoly {
 
     public fun player_position(self: &Game): &VecMap<address, u64> {
         &self.player_position
+    }
+
+    public fun player_position_of(self: &Game, player: address):u64{
+        self.player_position()[&player]
     }
 
     public fun cell_contains_with_type<Cell: key + store>(self: &Game, pos_index: u64): bool {
@@ -242,6 +250,10 @@ module monopoly::monopoly {
         self.player_balance_mut(request.player)
     }
 
+    fun update_player_position(self: &mut Game, mut player: address, new_pos_idx: u64){
+        *&mut self.player_position[&mut player] = new_pos_idx;
+    }
+
     fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
         self.cells.borrow_mut(pos_index)
     }
@@ -287,10 +299,11 @@ module monopoly::monopoly {
 
     /// This function should be called at the end of each action
     public fun settle_action_request<P: drop + copy + store>(request: &mut ActionRequest<P>) {
+        assert!(!request.settled, EActionRequestAlreadySettled);
         request.settled = true;
     }
 
-    // === Admin Functions ===
+    // === Init Function ===
     fun init(ctx: &mut TxContext) {
         let cap = AdminCap { id: object::new(ctx) };
 
@@ -301,16 +314,7 @@ module monopoly::monopoly {
         init(ctx);
     }
 
-    public fun add_cell<CellType: key + store>(
-        self: &mut Game,
-        _cap: &AdminCap,
-        pos_index: u64,
-        cell: CellType,
-    ) {
-        self.cells.add(pos_index, cell);
-    }
-
-    // === Package Functions ===
+    // === Admin Functions ===
 
     /// create game instance
     /// steps to start each game round
@@ -366,6 +370,18 @@ module monopoly::monopoly {
         });
     }
 
+    public fun add_cell<CellType: key + store>(
+        self: &mut Game,
+        _cap: &AdminCap,
+        pos_index: u64,
+        cell: CellType,
+    ) {
+        self.cells.add(pos_index, cell);
+    }
+
+    // === Package Functions ===
+
+    /// transfer TurnCap to game instance to determine the random number
     entry fun player_move(mut turn_cap: TurnCap, random: &Random, ctx: &mut TxContext): u8 {
         let mut generator = random::new_generator(random, ctx);
         let moved_steps = random::generate_u8_in_range(&mut generator, 1, 12);
@@ -393,30 +409,21 @@ module monopoly::monopoly {
         ctx: &mut TxContext,
     ): ActionRequest<P> {
         let turn_cap = transfer::receive(&mut self.id, receiving_turn_cap);
-        let TurnCap {
-            id,
-            game,
-            player,
-            moved_steps,
-            // TODO: check expired time window
-            expired_at,
-        } = turn_cap;
-        object::delete(id);
 
-        let player_new_pos = self.player_move_position(player, moved_steps);
-
-        ActionRequest {
-            id: object::new(ctx),
-            game,
-            player,
-            pos_index: player_new_pos,
-            parameters: option::none(),
-            settled: false,
-        }
+        request_player_move_<P>(self, turn_cap, ctx)
     }
 
+    // since testing doesn't allow acquire Receiving object, we create additional interface for testing
     #[test_only]
     public fun request_player_move_for_testing<P: copy + drop + store>(
+        self: &mut Game,
+        turn_cap: TurnCap,
+        ctx: &mut TxContext,
+    ): ActionRequest<P> {
+        request_player_move_<P>(self, turn_cap, ctx)
+    }
+
+    fun request_player_move_<P: copy + drop + store>(
         self: &mut Game,
         turn_cap: TurnCap,
         ctx: &mut TxContext,
@@ -427,11 +434,12 @@ module monopoly::monopoly {
             player,
             moved_steps,
             // TODO: check expired time window
-            expired_at,
+            expired_at: _,
         } = turn_cap;
         object::delete(id);
 
         let player_new_pos = self.player_move_position(player, moved_steps);
+        self.update_player_position(player, player_new_pos);
 
         ActionRequest {
             id: object::new(ctx),
@@ -449,23 +457,28 @@ module monopoly::monopoly {
         parameters: P,
     ) {
         assert!(action_request.parameters.is_none(), EActionRequestAlreadyConfig);
+        assert!(!action_request.settled, EActionRequestAlreadySettled);
+
         action_request.parameters.fill(parameters);
     }
 
+    // transfer configed ActionRequest to current_player to allow the POST method
     public fun request_player_action<P: copy + drop + store>(
         _self: &Game,
         action_request: ActionRequest<P>,
     ) {
+        assert!(!action_request.settled, EActionRequestAlreadySettled);
         assert!(action_request.parameters.is_some(), EActionRequestParametersdNotConfig);
 
         let (game, player, new_pos_idx) = action_request.action_request_info();
 
+        // emit the event with request body
         emit_action_request<P>(game, player, new_pos_idx, *action_request.parameters.borrow());
 
         transfer::transfer(action_request, player);
     }
 
-    public fun finish_action<P: copy + drop + store>(request: ActionRequest<P>) {
+    public fun finish_action_by_player<P: copy + drop + store>(request: ActionRequest<P>) {
         assert!(request.settled, EActionRequestNotSettled);
 
         let game_address = request.game.to_address();
@@ -523,7 +536,7 @@ module monopoly::monopoly {
         self.plays = self.plays + 1;
     }
 
-    fun player_move_position(self: &mut Game, player: address, moved_steps: u8): u64 {
+    fun player_move_position(self: &Game, player: address, moved_steps: u8): u64 {
         let current_position = self.player_position[&player];
         let new_position = current_position + (moved_steps as u64);
         let last_position_index = self.num_of_cells() - 1;
