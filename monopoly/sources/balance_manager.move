@@ -1,7 +1,12 @@
 module monopoly::balance_manager {
-    use sui::{balance::{Self, Balance, Supply}, vec_map::{Self, VecMap}};
+    use sui::{balance::{Self, Balance, Supply}, event, vec_map::{Self, VecMap}};
 
     const ENotExistPlayer: u64 = 101;
+
+    public struct BalanceUpdateEvent<phantom T> has copy, drop {
+        owner: address,
+        value: u64,
+    }
 
     public struct BalanceManager<phantom T> has key, store {
         id: UID,
@@ -27,7 +32,11 @@ module monopoly::balance_manager {
             self.balances.insert(player, balance::zero());
         };
 
-        self.balances[&mut player].join(self.supply.increase_supply(value))
+        let new_balance = self.balances[&mut player].join(self.supply.increase_supply(value));
+
+        event::emit(BalanceUpdateEvent<T> { owner: player, value: new_balance });
+
+        new_balance
     }
 
     /// @return; deducted value
@@ -36,7 +45,11 @@ module monopoly::balance_manager {
             self.balances.insert(player, balance::zero());
         };
 
-        self.supply.decrease_supply(self.balances[&mut player].split(value))
+        let deducted_value = self.supply.decrease_supply(self.balances[&mut player].split(value));
+
+        event::emit(BalanceUpdateEvent<T> { owner: player, value: self.balances[&player].value() });
+
+        deducted_value
     }
 
     /// @return; deducted value
@@ -56,6 +69,8 @@ module monopoly::balance_manager {
             balance.withdraw_all()
         };
 
+        event::emit(BalanceUpdateEvent<T> { owner: player, value: self.balances[&player].value() });
+
         self.supply.decrease_supply(removed_balance)
     }
 
@@ -67,6 +82,10 @@ module monopoly::balance_manager {
         value: u64,
     ): u64 {
         let split_balance = self.balances[&mut from].split(value);
+
+        event::emit(BalanceUpdateEvent<T> { owner: from, value: self.balances[&from].value() });
+        event::emit(BalanceUpdateEvent<T> { owner: to, value: self.balances[&to].value() });
+
         self.balances[&mut to].join(split_balance)
     }
 
