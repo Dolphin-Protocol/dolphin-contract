@@ -42,6 +42,15 @@ module monopoly::cell {
         }
     }
 
+    public fun drop_cell(self: Cell) {
+        let Cell {
+            id,
+            name: _,
+        } = self;
+
+        object::delete(id);
+    }
+
     public fun initialize_do_nothing_params(
         action_request: &mut ActionRequest<DoNothingArgument>,
         game: &Game,

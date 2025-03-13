@@ -1,5 +1,5 @@
 module monopoly::house_cell {
-    use monopoly::monopoly::{Game, ActionRequest, AdminCap};
+    use monopoly::{monopoly::{Game, ActionRequest, AdminCap}, utils};
     use std::{string::String, type_name::{Self, TypeName}};
     use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};
 
@@ -42,32 +42,32 @@ module monopoly::house_cell {
         type_name: TypeName,
         player_balance: u64,
         house_price: u64,
+        level: u8,
         eligible: bool,
         purchased: bool,
     }
 
-    public struct PayArgument has store {
-        //TODO
-    }
-
     // === Events ===
 
-    public struct ExecuteBuyEvent has copy, drop {
-        game: ID,
-        action_request: ID,
-        player: address,
-        purchased: bool,
-    }
-
-    public struct BuyActionSettledEvent has copy, drop {
+    /// Emit when server resolve buy or upgrade events
+    public struct BuyOrUpgradeHouseEvent has copy, drop {
         game: ID,
         action_request: ID,
         player: address,
         pos_index: u64,
-        type_name: TypeName,
-        payment: u64,
-        player_balance: u64,
-        house_price: u64,
+        house_name: String,
+        level: u8,
+        purchased: bool,
+    }
+
+    public struct PayHousePollEvent has copy, drop {
+        game: ID,
+        action_request: ID,
+        player: address,
+        pos_index: u64,
+        house_name: String,
+        level: u8,
+        payee: address,
     }
 
     // === Method Aliases ===
@@ -107,12 +107,26 @@ module monopoly::house_cell {
         self.name
     }
 
-    public fun buy_argument_info<T>(buy_argument: &BuyArgument<T>): (TypeName, u64, u64, bool) {
+    public fun buy_argument_info<T>(buy_argument: &BuyArgument<T>): (TypeName, u64, u64, u8, bool) {
         (
             buy_argument.type_name,
             buy_argument.player_balance,
             buy_argument.house_price,
+            buy_argument.level,
             buy_argument.purchased,
+        )
+    }
+
+    public fun house_cell_info(
+        self: &HouseCell,
+    ): (Option<address>, u8, String, Option<u64>, Option<u64>, u64) {
+        (
+            self.owner,
+            self.level,
+            self.name,
+            self.house_cell_current_buy_price(),
+            self.house_cell_current_sell_price(),
+            self.house_cell_current_poll(),
         )
     }
 
@@ -126,6 +140,24 @@ module monopoly::house_cell {
 
     public fun tolls(self: &HouseCell): &VecMap<u8, u64> {
         &self.house.tolls
+    }
+
+    // return None if attain max_level
+    public fun house_cell_current_buy_price(self: &HouseCell): Option<u64> {
+        if (self.level == self.max_level()) option::none()
+        else option::some(self.house.buy_prices[&(self.level + 1)])
+    }
+
+    public fun house_cell_current_sell_price(self: &HouseCell): Option<u64> {
+        if (self.level == 0) option::none() else option::some(self.house.tolls[&(self.level)])
+    }
+
+    public fun house_cell_current_poll(self: &HouseCell): u64 {
+        if (self.level == 0) 0 else self.house.tolls[&(self.level)]
+    }
+
+    public fun max_level(self: &HouseCell): u8 {
+        utils::max_of_u8(self.house.buy_prices.keys())
     }
 
     public fun buy_argument_type_name<T>(buy_argument: &BuyArgument<T>): TypeName {
@@ -173,6 +205,24 @@ module monopoly::house_cell {
             level: 0,
             house,
         }
+    }
+
+    public fun drop_house_cell(self: HouseCell) {
+        let HouseCell {
+            id,
+            owner: _,
+            name: _,
+            level: _,
+            house,
+        } = self;
+
+        object::delete(id);
+
+        let House {
+            buy_prices: _,
+            sell_prices: _,
+            tolls: _,
+        } = house;
     }
 
     // add house to registry
@@ -234,52 +284,89 @@ module monopoly::house_cell {
 
     // called after 'monopoly::request_player_move' to config the parameters
     public fun initialize_buy_params<T>(
-        action_request: &mut ActionRequest<BuyArgument<T>>, game: &Game,
+        action_request: &mut ActionRequest<BuyArgument<T>>,
+        game: &mut Game,
     ) {
-        // retrieve related dynamic object
+        // Retrieve related objects and values in a single block
         let house_cell: &HouseCell = game.borrow_cell_with_request(action_request);
+        let (owner, level, house_name, mut house_price, _, poll) = house_cell.house_cell_info();
 
-        // retrieve house object
-        let owner = house_cell.owner;
-        let house = &house_cell.house;
-        // price starts with level 1
-        let house_price = house.buy_prices[&(house_cell.level)];
-
-        // retrieve player balance
+        // Verify balance type and get player info
         assert!(game.balance_type_contains<T>(), EUnMatchedCoinType);
         let player = action_request.action_request_player();
         let player_balance = game.player_balance<T>(player).value();
-        let type_name = type_name::get<T>();
 
-        let eligible =
-            player_balance >= house_price && (owner.is_none() || owner.borrow() == player);
-        // TODO: this can be simplifed to only accept boolean value as the player only has either buy or do nothing 2 options, but we'll showcase how to customize more dynamic & complicated request bod
-        // request parameters
-        let parameters = BuyArgument<T> {
-            type_name,
+        // Create parameters object
+        let mut parameters = BuyArgument<T> {
+            type_name: type_name::get<T>(),
             player_balance,
-            house_price,
-            eligible,
+            house_price: 0,
+            level,
+            eligible: false,
             purchased: false,
         };
 
-        if (eligible) {
-            // user is eligible for buying the house; emit the request body and transfer ActionRequest
-            game.config_parameter(action_request, parameters);
+        if (owner.is_none()) {
+            // house_price should be some
+            let house_price = house_price.extract();
+            // buy action
+            if (player_balance >= house_price) {
+                parameters.eligible = true;
+                parameters.house_price = house_price;
+                game.config_parameter(action_request, parameters);
+            } else {
+                // insufficient balance
+                action_request.settle_action_request();
+            };
         } else {
-            // user is not eligible, mark the action_request is settled to prevent server transfer action_request to next_player
-            action_request.settle_action_request();
-        }
+            let owner = *owner.borrow();
+
+            if (owner == player) {
+                // upgrade
+                if (house_price.is_some()) {
+                    parameters.eligible = true;
+                    parameters.house_price = house_price.extract();
+                    game.config_parameter(action_request, parameters);
+                } else {
+                    // attain max_level
+                    action_request.settle_action_request();
+                };
+            } else {
+                // pay the poll
+                game
+                    .balance_mut<T>()
+                    .saturating_transfer(
+                        player,
+                        owner,
+                        poll,
+                    );
+                let (game_id, player, pos_index) = action_request.action_request_info();
+                action_request.settle_action_request();
+
+                event::emit(PayHousePollEvent {
+                    game: game_id,
+                    action_request: object::id(action_request),
+                    player,
+                    pos_index,
+                    house_name,
+                    level,
+                    payee: owner,
+                })
+            };
+        };
     }
 
-    public fun execute_buy<T>(mut request: ActionRequest<BuyArgument<T>>, purchased: bool) {
+    // user execute buy or upgrade the house
+    public fun execute_buy<T>(
+        mut request: ActionRequest<BuyArgument<T>>,
+        purchased: bool,
+        ctx: &TxContext,
+    ) {
         // validate balance
         let type_name = type_name::get<T>();
 
         assert!(request.action_request_parameters().is_some(), ENoParameterBody);
 
-        let (game, player, _) = request.action_request_info();
-        let action_request_id = object::id(&request);
         let parameters = request.action_request_parameters_mut().borrow_mut();
 
         assert!(parameters.type_name == type_name, EUnMatchedCoinType);
@@ -291,30 +378,23 @@ module monopoly::house_cell {
         request.settle_action_request();
 
         // transfer action to game object
-        request.finish_action_by_player();
-
-        event::emit(ExecuteBuyEvent {
-            game,
-            action_request: action_request_id,
-            player,
-            purchased,
-        });
+        request.finish_action_by_player(ctx);
     }
 
     /// executed by server to settle the game state
     public fun settle_buy<T>(
-        mut received_request: Receiving<ActionRequest<BuyArgument<T>>>,
+        received_request: Receiving<ActionRequest<BuyArgument<T>>>,
         game: &mut Game,
         ctx: &mut TxContext,
     ) {
-        let mut request = game.receive_action_request(received_request);
+        let request = game.receive_action_request(received_request);
         settle_buy_(request, game, ctx);
     }
 
     // test_only as we can't acquire Receiving object in test
     #[test_only]
     public fun settle_buy_for_testing<T>(
-        mut request: ActionRequest<BuyArgument<T>>,
+        request: ActionRequest<BuyArgument<T>>,
         game: &mut Game,
         ctx: &mut TxContext,
     ) {
@@ -332,6 +412,7 @@ module monopoly::house_cell {
             type_name,
             player_balance: _,
             house_price,
+            level,
             eligible,
             purchased,
         } = request.action_request_remove_parameters(game);
@@ -348,8 +429,8 @@ module monopoly::house_cell {
             );
 
             // update house owner & state
-            let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(&mut request);
-            house_cell.level = house_cell.level + 1;
+            let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(&request);
+            house_cell.level = std::u8::min(level + 1, house_cell.max_level());
 
             if (house_cell.owner.is_none()) {
                 house_cell.owner.fill(player);
@@ -358,6 +439,20 @@ module monopoly::house_cell {
                 assert!(house_cell.owner.borrow() == player, EPlayerNotHouseOwner);
             };
         };
+
+        let (game_id, player, pos_index) = request.action_request_info();
+        let action_request_id = object::id(&request);
+
+        let house_cell = game.borrow_cell<HouseCell>(pos_index);
+        event::emit(BuyOrUpgradeHouseEvent {
+            game: game_id,
+            action_request: action_request_id,
+            player,
+            pos_index,
+            house_name: house_cell.name,
+            level: house_cell.level,
+            purchased,
+        });
 
         // consume ActionRequest and transfer new TurnCap to next player
         game.drop_action_request(request, ctx);

@@ -136,7 +136,7 @@ module monopoly::monopoly_tests {
                 let mut prices_by_levels = vec_map::empty<u8, u64>();
 
                 buy_price_info.length().do!<()>(|idx| {
-                    prices_by_levels.insert((idx as u8), buy_price_info[idx]);
+                    prices_by_levels.insert((idx + 1 as u8), buy_price_info[idx]);
                 });
 
                 prices_by_levels
@@ -144,7 +144,7 @@ module monopoly::monopoly_tests {
                 let mut prices_by_levels = vec_map::empty<u8, u64>();
 
                 sell_price_info.length().do!<()>(|idx| {
-                    prices_by_levels.insert((idx as u8), sell_price_info[idx]);
+                    prices_by_levels.insert((idx + 1as u8), sell_price_info[idx]);
                 });
 
                 prices_by_levels
@@ -152,7 +152,7 @@ module monopoly::monopoly_tests {
                 let mut prices_by_levels = vec_map::empty<u8, u64>();
 
                 toll_info.length().do!<()>(|idx| {
-                    prices_by_levels.insert((idx as u8), toll_info[idx]);
+                    prices_by_levels.insert((idx + 1 as u8), toll_info[idx]);
                 });
 
                 prices_by_levels
@@ -184,10 +184,11 @@ module monopoly::monopoly_tests {
 
             // order insetion determine plays order
             let players = vector[b, c, d, e];
-            let max_rounds = 2;
+            let max_rounds = 5;
+            let max_steps = 12;
             let salary = 100;
 
-            let mut game = admin_cap.new(players, max_rounds, 100, ctx(s));
+            let mut game = admin_cap.new(players, max_rounds, max_steps, 100, ctx(s));
 
             // 1) cell setup
             // we will have 20 cells in 6x6 board game
@@ -297,8 +298,7 @@ module monopoly::monopoly_tests {
         (scenario, clock)
     }
 
-    #[test]
-    fun test_monopoly_basic() {
+    fun breakpoint_1(): (Scenario, Clock) {
         let (mut scenario, mut clock) = setup();
         let (admin, b, c, d, e) = people();
         let s = &mut scenario;
@@ -325,11 +325,14 @@ module monopoly::monopoly_tests {
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
             // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-            let mut action_request = game.request_player_move_for_testing<Monopoly, BuyArgument<Monopoly>>(
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
                 turn_cap,
                 ctx(s),
             );
-            action_request.initialize_buy_params(&game);
+            action_request.initialize_buy_params(&mut game);
             game.request_player_action(action_request);
             let game_id = object::id(&game);
 
@@ -360,17 +363,19 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 70);
+            assert!(level == 0);
             assert!(purchased == false);
 
             // settle action request then send the respone back to server
             let payment = 70;
             // action request has been sent to game object
-            action_request.execute_buy_action(true);
+            action_request.execute_buy_action(true, ctx(s));
         };
 
         s.next_tx(admin);
@@ -389,11 +394,13 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 70);
+            assert!(level == 0);
             assert!(purchased == true);
             // server settled buy action state
             house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
@@ -422,7 +429,6 @@ module monopoly::monopoly_tests {
 
             // 1) roll the dice
             let moved_steps = turn_cap.player_move(&random, ctx(s));
-            // this is the chanceAction
             assert!(moved_steps == 4);
 
             test::return_shared(random);
@@ -433,11 +439,14 @@ module monopoly::monopoly_tests {
             let mut game = s.take_from_sender<Game>();
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
-            let mut action_request = game.request_player_move_for_testing<Monopoly, BuyArgument<Monopoly>>(
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
                 turn_cap,
                 ctx(s),
             );
-            action_request.initialize_buy_params(&game);
+            action_request.initialize_buy_params(&mut game);
             game.request_player_action(action_request);
             let game_id = object::id(&game);
 
@@ -467,15 +476,17 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 40);
+            assert!(level == 0);
             assert!(purchased == false);
 
             // player_c refuse to buy
-            action_request.execute_buy_action(false);
+            action_request.execute_buy_action(false, ctx(s));
         };
 
         s.next_tx(admin);
@@ -494,11 +505,13 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 40);
+            assert!(level == 0);
             assert!(purchased == false);
             // server settled buy action state
             house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
@@ -531,7 +544,6 @@ module monopoly::monopoly_tests {
 
             // 1) roll the dice
             let moved_steps = turn_cap.player_move(&random, ctx(s));
-            // this is the chanceAction
             assert!(moved_steps == 10);
 
             test::return_shared(random);
@@ -543,7 +555,10 @@ module monopoly::monopoly_tests {
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
             // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-            let mut action_request = game.request_player_move_for_testing<Monopoly, DoNothingArgument>(
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                DoNothingArgument,
+            >(
                 turn_cap,
                 ctx(s),
             );
@@ -569,7 +584,6 @@ module monopoly::monopoly_tests {
 
             // 1) roll the dice
             let moved_steps = turn_cap.player_move(&random, ctx(s));
-            // this is the chanceAction
             assert!(moved_steps == 3);
 
             test::return_shared(random);
@@ -580,11 +594,14 @@ module monopoly::monopoly_tests {
             let mut game = s.take_from_sender<Game>();
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
-            let mut action_request = game.request_player_move_for_testing<Monopoly, BuyArgument<Monopoly>>(
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
                 turn_cap,
                 ctx(s),
             );
-            action_request.initialize_buy_params(&game);
+            action_request.initialize_buy_params(&mut game);
             game.request_player_action(action_request);
             let game_id = object::id(&game);
 
@@ -614,15 +631,17 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 30);
+            assert!(level == 0);
             assert!(purchased == false);
 
             // player_c refuse to buy
-            action_request.execute_buy_action(true);
+            action_request.execute_buy_action(true, ctx(s));
         };
 
         s.next_tx(admin);
@@ -641,11 +660,13 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 30);
+            assert!(level == 0);
             assert!(purchased == true);
             // server settled buy action state
             house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
@@ -683,7 +704,10 @@ module monopoly::monopoly_tests {
             let mut game = s.take_from_sender<Game>();
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
-            let mut action_request = game.request_player_move_for_testing<Monopoly, DoNothingArgument>(
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                DoNothingArgument,
+            >(
                 turn_cap,
                 ctx(s),
             );
@@ -718,11 +742,14 @@ module monopoly::monopoly_tests {
             let mut game = s.take_from_sender<Game>();
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
-            let mut action_request = game.request_player_move_for_testing<Monopoly, BuyArgument<Monopoly>>(
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
                 turn_cap,
                 ctx(s),
             );
-            action_request.initialize_buy_params(&game);
+            action_request.initialize_buy_params(&mut game);
             game.request_player_action(action_request);
             let game_id = object::id(&game);
 
@@ -752,15 +779,17 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 90);
+            assert!(level == 0);
             assert!(purchased == false);
 
             // player_c refuse to buy
-            action_request.execute_buy_action(true);
+            action_request.execute_buy_action(true, ctx(s));
         };
 
         s.next_tx(admin);
@@ -779,11 +808,13 @@ module monopoly::monopoly_tests {
                 type_name,
                 player_balance,
                 house_price,
+                level,
                 purchased,
             ) = buy_argument.buy_argument_info();
             assert!(type_name == type_name::get<Monopoly>());
             assert!(player_balance == 2000);
             assert!(house_price == 90);
+            assert!(level == 0);
             assert!(purchased == true);
             // server settled buy action state
             house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
@@ -826,7 +857,10 @@ module monopoly::monopoly_tests {
             let mut game = s.take_from_sender<Game>();
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
 
-            let mut action_request = game.request_player_move_for_testing<Monopoly, DoNothingArgument>(
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                DoNothingArgument,
+            >(
                 turn_cap,
                 ctx(s),
             );
@@ -836,14 +870,867 @@ module monopoly::monopoly_tests {
             assert!(game.player_position_of(d) == 0);
             assert!(game.current_round() == 1);
             assert!(game.plays() == 7);
-            // recieve salary
-            assert!(game.player_balance<Monopoly>(d).value() == 2000 + 100) ;
+            // player_d back to start point, should not recieve salary
+            assert!(game.player_balance<Monopoly>(d).value() == 2000);
 
             s.return_to_sender(game);
 
             game_id
         };
 
+        // === player E turn ===
+
+        s.next_tx(e);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move(&random, ctx(s));
+            assert!(moved_steps == 3);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.request_player_action(action_request);
+            let game_id = object::id(&game);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        s.next_tx(e);
+        {
+            let action_request = s.take_from_sender<ActionRequest<BuyArgument<Monopoly>>>();
+            let (game_id_, player, new_pos_idx) = action_request.action_request_info();
+
+            // check action_request info
+            assert!(game_id == game_id_);
+            assert!(player == e);
+            assert!(new_pos_idx == 6);
+            assert!(action_request.action_request_settled() == false);
+            // checkw dynamic argument
+            let buy_argument_opt = action_request.action_request_parameters<
+                BuyArgument<Monopoly>,
+            >();
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 2000 - 30);
+            assert!(house_price == 50);
+            assert!(level == 0);
+            assert!(purchased == false);
+
+            action_request.execute_buy_action(true, ctx(s));
+        };
+
+        s.next_tx(admin);
+        {
+            let mut game = s.take_from_sender<Game>();
+
+            let action_request = s.take_from_address<ActionRequest<BuyArgument<Monopoly>>>(
+                object::id_address(&game),
+            );
+            let buy_argument_opt = action_request.action_request_parameters();
+
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 1970);
+            assert!(house_price == 50);
+            assert!(level == 0);
+            assert!(purchased == true);
+            // server settled buy action state
+            house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
+            // check player balance, house, pos_index
+            let player_balance = game.player_balance<Monopoly>(e).value();
+            assert!(player_balance == 2000 - 30 - 50);
+            assert!(game.player_position_of(e) == 6);
+
+            let house_cell: &HouseCell = game.borrow_cell<HouseCell>(6);
+            assert!(house_cell.house_cell_owner().extract() == e);
+            assert!(house_cell.level() == 1);
+
+            assert!(game.current_round() == 2);
+            assert!(game.plays() == 8);
+
+            s.return_to_sender(game);
+        };
+
+        // === player B turn ===
+
+        s.next_tx(b);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(1);
+            assert!(moved_steps == 1);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // player_b pay "375" toll to player_c
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.drop_action_request(action_request, ctx(s));
+
+            assert!(game.player_position_of(b) == 11);
+            assert!(game.current_round() == 2);
+            assert!(game.plays() == 9);
+
+            // player_balance;
+            assert!(game.player_balance<Monopoly>(b).value() == 1930 - 135);
+            assert!(game.player_balance<Monopoly>(c).value() == 1910 + 135);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === player C turn ===
+
+        s.next_tx(c);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(11);
+            assert!(moved_steps == 11);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.request_player_action(action_request);
+            let game_id = object::id(&game);
+
+            // recieve salary
+            assert!(game.player_balance<Monopoly>(c).value() == 2045 + 100);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        s.next_tx(c);
+        {
+            let action_request = s.take_from_sender<ActionRequest<BuyArgument<Monopoly>>>();
+            let (game_id_, player, new_pos_idx) = action_request.action_request_info();
+
+            // check action_request info
+            assert!(game_id == game_id_);
+            assert!(player == c);
+            assert!(new_pos_idx == 2);
+            assert!(action_request.action_request_settled() == false);
+            // checkw dynamic argument
+            let buy_argument_opt = action_request.action_request_parameters<
+                BuyArgument<Monopoly>,
+            >();
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 2045 + 100);
+            assert!(house_price == 30);
+            assert!(level == 0);
+            assert!(purchased == false);
+
+            action_request.execute_buy_action(true, ctx(s));
+        };
+
+        s.next_tx(admin);
+        {
+            let mut game = s.take_from_sender<Game>();
+
+            let action_request = s.take_from_address<ActionRequest<BuyArgument<Monopoly>>>(
+                object::id_address(&game),
+            );
+            let buy_argument_opt = action_request.action_request_parameters();
+
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 2045 + 100);
+            assert!(house_price == 30);
+            assert!(level == 0);
+            assert!(purchased == true);
+            // server settled buy action state
+            house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
+            // check player balance, house, pos_index
+            let player_balance = game.player_balance<Monopoly>(c).value();
+            assert!(player_balance == 2145 - 30);
+            assert!(game.player_position_of(c) == 2);
+
+            let house_cell: &HouseCell = game.borrow_cell<HouseCell>(2);
+            assert!(house_cell.house_cell_owner().extract() == c);
+            assert!(house_cell.level() == 1);
+            assert!(game.current_round() == 2);
+            assert!(game.plays() == 10);
+
+            s.return_to_sender(game);
+        };
+
+        // === player D turn ===
+
+        s.next_tx(d);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move(&random, ctx(s));
+            assert!(moved_steps == 2);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // player_d pay "45" toll to player_c
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.drop_action_request(action_request, ctx(s));
+
+            assert!(game.player_position_of(d) == 2);
+            assert!(game.current_round() == 2);
+            assert!(game.plays() == 11);
+
+            // player_balance;
+            assert!(game.player_balance<Monopoly>(d).value() == 2000 - 45);
+            assert!(game.player_balance<Monopoly>(c).value() == 2115 + 45);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === player E turn ===
+
+        s.next_tx(e);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            // cheating; test upgrade house :p
+            let moved_steps = turn_cap.player_move_for_testing(17);
+            assert!(moved_steps == 17);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            // upgrade
+            game.request_player_action(action_request);
+            let game_id = object::id(&game);
+
+            // recieve salary
+            assert!(game.player_balance<Monopoly>(e).value() == 1920 + 100);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        s.next_tx(e);
+        {
+            let action_request = s.take_from_sender<ActionRequest<BuyArgument<Monopoly>>>();
+            let (game_id_, player, new_pos_idx) = action_request.action_request_info();
+
+            // check action_request info
+            assert!(game_id == game_id_);
+            assert!(player == e);
+            assert!(new_pos_idx == 3);
+            assert!(action_request.action_request_settled() == false);
+            // checkw dynamic argument
+            let buy_argument_opt = action_request.action_request_parameters<
+                BuyArgument<Monopoly>,
+            >();
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 2020);
+            assert!(house_price == 90);
+            assert!(level == 1);
+            assert!(purchased == false);
+
+            action_request.execute_buy_action(true, ctx(s));
+        };
+
+        s.next_tx(admin);
+        {
+            let mut game = s.take_from_sender<Game>();
+
+            let action_request = s.take_from_address<ActionRequest<BuyArgument<Monopoly>>>(
+                object::id_address(&game),
+            );
+            let buy_argument_opt = action_request.action_request_parameters();
+
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 2020);
+            assert!(house_price == 90);
+            assert!(level == 1);
+            assert!(purchased == true);
+            // server settled buy action state
+            house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
+            // check player balance, house, pos_index
+            let player_balance = game.player_balance<Monopoly>(e).value();
+            assert!(player_balance == 2020 - 90);
+            assert!(game.player_position_of(e) == 3);
+
+            let house_cell: &HouseCell = game.borrow_cell<HouseCell>(3);
+            assert!(house_cell.house_cell_owner().extract() == e);
+            assert!(house_cell.level() == 2);
+            assert!(game.current_round() == 3);
+            assert!(game.plays() == 12);
+
+            s.return_to_sender(game);
+        };
+
+        // === player B turn ===
+
+        s.next_tx(b);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(12);
+            assert!(moved_steps == 12);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // player_b pay "135" toll to player_e
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+
+            action_request.initialize_buy_params(&mut game);
+            game.drop_action_request(action_request, ctx(s));
+            assert!(game.player_position_of(b) == 3);
+            assert!(game.current_round() == 3);
+            assert!(game.plays() == 13);
+
+            // player_balance;
+            // recieve salary and pay the poll
+            assert!(game.player_balance<Monopoly>(b).value() == 1795 + 100 - 135);
+            assert!(game.player_balance<Monopoly>(e).value() == 1930 + 135);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === player C turn ===
+
+        s.next_tx(c);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(3);
+            assert!(moved_steps == 3);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                DoNothingArgument,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_do_nothing_params(&game);
+            game.drop_action_request(action_request, ctx(s));
+
+            assert!(game.player_position_of(c) == 5);
+            assert!(game.current_round() == 3);
+            assert!(game.plays() == 14);
+            assert!(game.player_balance<Monopoly>(c).value() == 2160);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === player D turn ===
+
+        s.next_tx(d);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(3);
+            assert!(moved_steps == 3);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                DoNothingArgument,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_do_nothing_params(&game);
+            game.drop_action_request(action_request, ctx(s));
+
+            assert!(game.player_position_of(d) == 5);
+            assert!(game.current_round() == 3);
+            assert!(game.plays() == 15);
+            assert!(game.player_balance<Monopoly>(d).value() == 1955);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === player E turn ===
+
+        s.next_tx(e);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(20);
+            assert!(moved_steps == 20);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            // upgrade to the max level
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.request_player_action(action_request);
+            let game_id = object::id(&game);
+
+            // we won't recieve salary as we're cheating :p
+            assert!(game.player_balance<Monopoly>(e).value() == 2065);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        s.next_tx(e);
+        {
+            let action_request = s.take_from_sender<ActionRequest<BuyArgument<Monopoly>>>();
+            let (game_id_, player, new_pos_idx) = action_request.action_request_info();
+
+            // check action_request info
+            assert!(game_id == game_id_);
+            assert!(player == e);
+            assert!(new_pos_idx == 3);
+            assert!(action_request.action_request_settled() == false);
+            // checkw dynamic argument
+            let buy_argument_opt = action_request.action_request_parameters<
+                BuyArgument<Monopoly>,
+            >();
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 2065);
+            assert!(house_price == 270);
+            assert!(level == 2);
+            assert!(purchased == false);
+
+            action_request.execute_buy_action(true, ctx(s));
+        };
+
+        s.next_tx(admin);
+        {
+            let mut game = s.take_from_sender<Game>();
+
+            let action_request = s.take_from_address<ActionRequest<BuyArgument<Monopoly>>>(
+                object::id_address(&game),
+            );
+            let buy_argument_opt = action_request.action_request_parameters();
+
+            assert!(buy_argument_opt.is_some());
+
+            let buy_argument = buy_argument_opt.borrow();
+            let (
+                type_name,
+                player_balance,
+                house_price,
+                level,
+                purchased,
+            ) = buy_argument.buy_argument_info();
+            assert!(type_name == type_name::get<Monopoly>());
+            assert!(player_balance == 2065);
+            assert!(house_price == 270);
+            assert!(level == 2);
+            assert!(purchased == true);
+            // server settled buy action state
+            house_cell::settle_buy_for_testing(action_request, &mut game, ctx(s));
+            // check player balance, house, pos_index
+            let player_balance = game.player_balance<Monopoly>(e).value();
+            assert!(player_balance == 2065 - 270);
+            assert!(game.player_position_of(e) == 3);
+
+            let house_cell: &HouseCell = game.borrow_cell<HouseCell>(3);
+            assert!(house_cell.house_cell_owner().extract() == e);
+            assert!(house_cell.level() == 3);
+            assert!(game.current_round() == 4);
+            assert!(game.plays() == 16);
+
+            s.return_to_sender(game);
+        };
+
+        // === player B turn ===
+
+        s.next_tx(b);
+        {
+            // make player_b bankrupt
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(20);
+            assert!(moved_steps == 20);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // burn player's balance
+            let player_balance = game.player_balance<Monopoly>(b).value();
+            let balance_manager = game.balance_mut<Monopoly>().sub_balance(b, player_balance - 100);
+
+            // player_b should pay "405" toll to player_e but only remain 100
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.drop_action_request(action_request, ctx(s));
+
+            assert!(game.player_position_of(b) == 3);
+            assert!(game.current_round() == 4);
+            assert!(game.plays() == 17);
+
+            // player_balance;
+            assert!(game.player_balance<Monopoly>(b).value() == 0);
+            assert!(game.player_balance<Monopoly>(e).value() == 1795 + 100);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === player C turn ===
+
+        s.next_tx(c);
+        {
+            // make player_b bankrupt
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(18);
+            assert!(moved_steps == 18);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // player_c should pay "405" toll to player_e but only remain 100
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.drop_action_request(action_request, ctx(s));
+
+            assert!(game.player_position_of(c) == 3);
+            assert!(game.current_round() == 4);
+            assert!(game.plays() == 18);
+
+            // pay the toll + recieve salary
+            assert!(game.player_balance<Monopoly>(c).value() == 2160 + 100 - 405);
+            assert!(game.player_balance<Monopoly>(e).value() == 1895 + 405);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === player D turn ===
+
+        s.next_tx(d);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(5);
+            assert!(moved_steps == 5);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                DoNothingArgument,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_do_nothing_params(&game);
+            game.drop_action_request(action_request, ctx(s));
+
+            assert!(game.player_position_of(d) == 10);
+            assert!(game.current_round() == 4);
+            assert!(game.plays() == 19);
+            assert!(game.player_balance<Monopoly>(d).value() == 1955);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        (scenario, clock)
+    }
+
+    #[test]
+    fun test_monopoly_basic() {
+        let (mut scenario, mut clock) = breakpoint_1();
+        let (admin, b, c, d, e) = people();
+        let s = &mut scenario;
+
+        // === player E turn ===
+
+        s.next_tx(e);
+        {
+            let random = s.take_shared<Random>();
+            let mut turn_cap = s.take_from_sender<TurnCap>();
+
+            let moved_steps = turn_cap.player_move_for_testing(20);
+            assert!(moved_steps == 20);
+
+            test::return_shared(random);
+        };
+
+        s.next_tx(admin);
+        let game_id = {
+            let mut game = s.take_from_sender<Game>();
+            let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
+
+            // player_e should not upgrade anymore
+            let mut action_request = game.request_player_move_for_testing<
+                Monopoly,
+                BuyArgument<Monopoly>,
+            >(
+                turn_cap,
+                ctx(s),
+            );
+            action_request.initialize_buy_params(&mut game);
+            game.drop_action_request(action_request, ctx(s));
+
+            // player_balance;
+            let player_balance = game.player_balance<Monopoly>(e).value();
+            assert!(player_balance == 2300);
+            assert!(game.player_position_of(e) == 3);
+
+            let house_cell: &HouseCell = game.borrow_cell<HouseCell>(3);
+            assert!(house_cell.house_cell_owner().extract() == e);
+            assert!(house_cell.level() == 3);
+            assert!(game.current_round() == 5);
+            assert!(game.plays() == 20);
+
+            let game_id = object::id(&game);
+
+            s.return_to_sender(game);
+
+            game_id
+        };
+
+        // === Game Finish ===
+
+        s.next_tx(admin);
+        {
+            let mut game = s.take_from_sender<Game>();
+
+            // remove_balance
+            game.remove_balance<Monopoly>(ctx(s));
+
+// remove all the cells
+            20u64.do!<u64>(|idx: u64| {
+                // cells order
+                if (idx % 5 == 0) {
+                    let cell: Cell = game.remove_cell(idx);
+                    cell.drop_cell();
+                } else {
+                    let cell: HouseCell = game.remove_cell(idx);
+                    cell.drop_house_cell();
+                };
+            });
+
+            game.drop();
+        };
 
         scenario.end();
         clock.destroy_for_testing();
@@ -854,12 +1741,13 @@ module monopoly::monopoly_tests {
 // - huoses: [9]
 
 // player_c
-// - huoses: []
+// - huoses: [11, 2]
 
 // player_d
 // - huoses: []
 
 // player_e
-// - huoses: [3]
+// - huoses: [3, 6]
 
-// positions:[10, 11, 0, 3]
+// positions:[3, 2, 5, 3]
+// balances:[1795, 2115, 2000, 1930]
