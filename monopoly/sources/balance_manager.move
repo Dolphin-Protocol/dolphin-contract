@@ -1,5 +1,4 @@
 module monopoly::balance_manager {
-    use monopoly::freezer;
     use sui::{balance::{Self, Balance, Supply}, event, vec_map::{Self, VecMap}};
 
     const ENotExistPlayer: u64 = 101;
@@ -23,7 +22,7 @@ module monopoly::balance_manager {
         }
     }
 
-    public fun drop<T>(self: BalanceManager<T>, ctx: &mut TxContext): VecMap<address, u64> {
+    public fun drop<T>(self: BalanceManager<T>): (Supply<T>, VecMap<address, u64>) {
         let BalanceManager {
             id,
             mut supply,
@@ -38,9 +37,7 @@ module monopoly::balance_manager {
             balances_.map!(|bal| supply.decrease_supply(bal)),
         );
 
-        freezer::freeze_object(supply, ctx);
-
-        results
+        (supply, results)
     }
 
     public fun burn<T>(self: &mut BalanceManager<T>, balance: Balance<T>): u64 {

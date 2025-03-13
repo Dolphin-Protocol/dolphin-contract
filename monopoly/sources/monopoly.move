@@ -369,11 +369,11 @@ module monopoly::monopoly {
     }
 
     // close balance if game is finished
-    public fun remove_balance<T>(self: &mut Game, ctx: &mut TxContext): VecMap<address, u64> {
+    public fun remove_balance<T>(self: &mut Game): (Supply<T>, VecMap<address, u64>) {
         assert!(!self.is_gaming_ongoing(), EGameStillOngoing);
 
         let balance_manager: BalanceManager<T> = self.balances.remove(type_name::get<T>());
-        balance_manager.drop(ctx)
+        balance_manager.drop()
     }
 
     public fun add_cell<CellType: key + store>(
@@ -385,10 +385,7 @@ module monopoly::monopoly {
         self.cells.add(pos_index, cell);
     }
 
-    public fun remove_cell<CellType: key + store>(
-        self: &mut Game,
-        pos_index: u64,
-    ): CellType {
+    public fun remove_cell<CellType: key + store>(self: &mut Game, pos_index: u64): CellType {
         assert!(!self.is_gaming_ongoing(), EGameStillOngoing);
         self.cells.remove(pos_index)
     }

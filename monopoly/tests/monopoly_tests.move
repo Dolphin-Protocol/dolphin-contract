@@ -5,6 +5,7 @@ module monopoly::monopoly_tests {
         cell::{Self, Cell, DoNothingArgument},
         house_cell::{Self, HouseCell, BuyArgument},
         monopoly::{Self, AdminCap, Game, TurnCap, ActionRequest},
+        supply::{Self, Monopoly},
         test_utils
     };
     use std::{string::{Self, String}, type_name};
@@ -19,9 +20,6 @@ module monopoly::monopoly_tests {
     fun people(): (address, address, address, address, address) {
         (@0xA, @0xB, @0xC, @0xD, @0xE)
     }
-
-    // Fabricated Balance Type
-    public struct Monopoly has drop {}
 
     const START_TIME: u64 = 1000_000;
 
@@ -239,7 +237,7 @@ module monopoly::monopoly_tests {
 
             // 2) Balance setup
             {
-                let supply = balance::create_supply(Monopoly {});
+                let supply = supply::new_supply(&admin_cap);
                 game.setup_balance<Monopoly>(&admin_cap, supply, initial_fund, ctx(s));
             };
 
@@ -1715,9 +1713,10 @@ module monopoly::monopoly_tests {
             let mut game = s.take_from_sender<Game>();
 
             // remove_balance
-            game.remove_balance<Monopoly>(ctx(s));
+            let (supply, balance_info) = game.remove_balance<Monopoly>();
+            supply::store_supply(supply, admin, ctx(s));
 
-// remove all the cells
+            // remove all the cells
             20u64.do!<u64>(|idx: u64| {
                 // cells order
                 if (idx % 5 == 0) {
