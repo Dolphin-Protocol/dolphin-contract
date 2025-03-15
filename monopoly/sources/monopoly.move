@@ -35,7 +35,7 @@ module monopoly::monopoly {
 
     // === Structs ===
 
-    public struct AdminCap has key {
+    public struct AdminCap has key, store{
         id: UID,
     }
 

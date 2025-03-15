@@ -24,6 +24,7 @@ module monopoly::house_cell {
 
     public struct House has copy, store {
         // TODO: maybe walrus img_url stored in url?
+        // each level starts from 1
         buy_prices: VecMap<u8, u64>,
         sell_prices: VecMap<u8, u64>,
         tolls: VecMap<u8, u64>,
