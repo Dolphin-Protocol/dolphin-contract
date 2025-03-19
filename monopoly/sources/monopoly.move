@@ -252,6 +252,12 @@ module monopoly::monopoly {
         *name_to_position.get(&name)
     }
 
+    public fun skips(
+        self: &Game,
+    ): &VecMap<address, u8>{
+        &self.skips
+    }
+
     // === Mutable Functions ===
 
     public fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T> {

@@ -562,4 +562,5 @@ module monopoly::house_cell {
     public fun init_for_testing(ctx: &mut TxContext) {
         init(ctx);
     }
+
 }

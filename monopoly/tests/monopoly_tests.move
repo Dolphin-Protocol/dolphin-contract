@@ -305,7 +305,7 @@ module monopoly::monopoly_tests {
                     if (idx < 4){ // balance chance (increase)
                         chance_cell::add_balance_chance_to_registry(&mut chance_registry, &admin_cap, descriptions[idx], true, 1000 * (idx + 1))
                     }else if (idx < 9){ // balance chance (decrease)
-                        chance_cell::add_balance_chance_to_registry(&mut chance_registry, &admin_cap, descriptions[idx], false, 500 * (idx + 1))
+                        chance_cell::add_balance_chance_to_registry(&mut chance_registry, &admin_cap, descriptions[idx], false, 500 * (idx - 3))
                     }else if (idx < 41){ // toll chance 
                         let bps = if (idx % 2 == 1) 20000 else 5000;
                         chance_cell::add_toll_chance_to_registry(&mut chance_registry, &admin_cap, &house_registry, descriptions[idx], string::utf8((house_idx).to_string().into_bytes()), bps);
@@ -339,7 +339,7 @@ module monopoly::monopoly_tests {
                             name,
                             ctx(s),
                         );
-                        house_cell::add_name_to_position(&mut game, name, house_idx);
+                        house_cell::add_name_to_position(&mut game, name, idx as u8);
                         game.add_cell(&admin_cap, idx, cell);
                         house_idx = house_idx + 1;
                     };
@@ -674,10 +674,11 @@ module monopoly::monopoly_tests {
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
-            let idx_receipt = chance_registry.pick_chance_num(&admin_cap, &random, s.ctx());
+            let idx_receipt = chance_cell::pick_chance_num_testing(0);
 
             
             let idx = idx_receipt.index();
+
             if (idx < chance_registry.balance_chance_amt()){
                 // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
                 let mut action_request = game.request_player_move_for_testing<
@@ -726,14 +727,14 @@ module monopoly::monopoly_tests {
             }else{
                 abort 2;
             };
-            assert!(idx == 50);
+            assert!(idx == 0);
             
             assert!(game.borrow_cell<HouseCell>(game.house_position_of(3u64.to_string()) as u64).level() == 0);
 
             assert!(game.player_position_of(d) == 10);
             assert!(game.current_round() == 0);
             assert!(game.plays() == 3);
-            assert!(game.player_balance<Monopoly>(d).value() == 2000);
+            assert!(game.player_balance<Monopoly>(d).value() == 2000 + 1000);
 
             s.return_to_sender(game);
             test::return_shared(random);
@@ -876,7 +877,7 @@ module monopoly::monopoly_tests {
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
             
-            let idx_receipt = chance_registry.pick_chance_num(&admin_cap, &random, s.ctx());
+            let idx_receipt = chance_cell::pick_chance_num_testing(9);
 
             
             let idx = idx_receipt.index();
@@ -900,9 +901,15 @@ module monopoly::monopoly_tests {
                     turn_cap,
                     ctx(s),
                 );
+                let house_cell = game.borrow_cell<HouseCell>(1);
+                assert!(house_cell.tolls().get(&1) == 15);
                 let chance = chance_registry.burn_receipt_and_get_toll_chance_info(idx_receipt);
                 action_request.initialize_toll_chance(&mut game, chance);
                 game.drop_action_request(action_request, ctx(s));
+
+                let house_cell = game.borrow_cell<HouseCell>(1);
+                assert!(house_cell.tolls().get(&1) == 15*2);
+
             }else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()){
                 let mut action_request = game.request_player_move_for_testing<
                     Monopoly,
@@ -932,14 +939,12 @@ module monopoly::monopoly_tests {
             assert!(game.current_round() == 1);
             assert!(game.plays() == 5);
 
-            assert!(idx == 60);
+            assert!(idx == 9);
             
-
             s.return_to_sender(game);
             test::return_shared(random);
             s.return_to_sender(admin_cap);
             test::return_shared(chance_registry);
-
 
             game_id
         };
@@ -967,7 +972,7 @@ module monopoly::monopoly_tests {
 
             
             let idx_receipt = chance_registry.pick_chance_num(&admin_cap, &random, s.ctx());
-            assert!(game.borrow_cell<HouseCell>(game.house_position_of(7u64.to_string()) as u64).level() == 0);
+            
             
             let idx = idx_receipt.index();
             if (idx < chance_registry.balance_chance_amt()){
@@ -1023,7 +1028,7 @@ module monopoly::monopoly_tests {
             assert!(game.plays() == 6);
             assert!(idx == 57);
 
-            assert!(game.borrow_cell<HouseCell>(game.house_position_of(7u64.to_string()) as u64).level() == 1);
+            assert!(game.borrow_cell<HouseCell>(game.house_position_of(7u64.to_string()) as u64).level() == 2);
             
 
             s.return_to_sender(game);
@@ -1506,7 +1511,7 @@ module monopoly::monopoly_tests {
 
             // player_balance;
             assert!(game.player_balance<Monopoly>(c).value() == 2000 - 110 + 165);
-            assert!(game.player_balance<Monopoly>(d).value() == 2000 - 165);
+            assert!(game.player_balance<Monopoly>(d).value() == 3000 - 165);
 
             s.return_to_sender(game);
 
@@ -1896,7 +1901,7 @@ module monopoly::monopoly_tests {
             assert!(game.plays() == 15);
 
             // player_balance;
-            assert!(game.player_balance<Monopoly>(d).value() == 1835 + 100 - 45);
+            assert!(game.player_balance<Monopoly>(d).value() == 2835 + 100 - 45);
             assert!(game.player_balance<Monopoly>(e).value() == 1670 + 45);
 
             s.return_to_sender(game);

@@ -230,6 +230,8 @@ public fun index(
     receipt.idx
 }
 
+public fun toll_chance_name(toll_chance: &TollChance): String{ toll_chance.name }
+
 
 // === Admin Functions ===
 public fun add_balance_chance_to_registry(
@@ -623,5 +625,14 @@ fun calculate_total_asset_value_of (
 #[test_only]
 public fun init_for_testing(ctx: &mut TxContext) {
     init(ctx);
+}
+
+#[test_only]
+public fun pick_chance_num_testing(
+    idx: u8,
+): IndexReceipt{
+    IndexReceipt{
+        idx,
+    }
 }
 
