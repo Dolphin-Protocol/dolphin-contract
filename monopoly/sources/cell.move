@@ -25,7 +25,7 @@ module monopoly::cell {
     // === Public Functions ===
 
     // === View Functions ===
-
+    public fun name(self: &Cell,): String{ self.name }
     // === Admin Functions ===
 
     // === Package Functions ===

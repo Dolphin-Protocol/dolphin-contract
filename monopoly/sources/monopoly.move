@@ -1,6 +1,14 @@
 module monopoly::monopoly {
-    use monopoly::{balance_manager::{Self, BalanceManager}, event::emit_action_request};
-    use std::type_name::{Self, TypeName};
+
+    // === Imports ===
+    use monopoly::{
+        balance_manager::{Self, BalanceManager}, 
+        event::emit_action_request,
+    };
+    use std::{
+        type_name::{Self, TypeName},
+        string::{String},
+    };
     use sui::{
         bag::{Self, Bag},
         balance::{Balance, Supply},
@@ -12,8 +20,6 @@ module monopoly::monopoly {
         vec_map::{Self, VecMap},
         vec_set::{Self, VecSet}
     };
-
-    // === Imports ===
 
     // === Errors ===
 
@@ -32,8 +38,10 @@ module monopoly::monopoly {
     const EActionRequestParametersdNotConfig: u64 = 109;
     const EActionRequestAlreadyConfig: u64 = 110;
     const EGameStillOngoing: u64 = 111;
-
+    const EKeyNotExisted: u64 = 112;
     // === Structs ===
+    // DF Key
+    public struct NameToPosition has copy, store, drop{}
 
     public struct AdminCap has key, store{
         id: UID,
@@ -52,6 +60,7 @@ module monopoly::monopoly {
         player_position: VecMap<address, u64>,
         /// positions of cells in the map
         /// Mapping<u64, T>
+        player_asset: VecMap<address, VecSet<u8>>,
         cells: ObjectBag,
         // times of each player do the actions
         plays: u64,
@@ -105,6 +114,16 @@ module monopoly::monopoly {
     public use fun monopoly::house_cell::initialize_buy_params as
         ActionRequest.initialize_buy_params;
     public use fun monopoly::house_cell::execute_buy as ActionRequest.execute_buy_action;
+    // chance cell 
+    public use fun monopoly::chance_cell::initialize_balance_chance as 
+        ActionRequest.initialize_balance_chance;
+    public use fun monopoly::chance_cell::initialize_toll_chance as 
+        ActionRequest.initialize_toll_chance;
+    public use fun monopoly::chance_cell::initialize_house_chance as 
+        ActionRequest.initialize_house_chance;
+    public use fun monopoly::chance_cell::initialize_jail_chance as 
+        ActionRequest.initialize_jail_chance;
+    
 
     // === View Functions ===
     public fun max_round(self: &Game): u64 {
@@ -224,6 +243,15 @@ module monopoly::monopoly {
         self.current_round() < self.max_round
     }
 
+    public fun house_position_of (
+        self: &Game,
+        name: String,
+    ): u8{
+        assert!(df::exists_(&self.id, NameToPosition{}), EKeyNotExisted);
+        let name_to_position = df::borrow<NameToPosition, VecMap<String, u8>>(&self.id, NameToPosition{});
+        *name_to_position.get(&name)
+    }
+
     // === Mutable Functions ===
 
     public fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T> {
@@ -243,10 +271,6 @@ module monopoly::monopoly {
 
     fun update_player_position(self: &mut Game, player: address, new_pos_idx: u64) {
         *&mut self.player_position[&player] = new_pos_idx;
-    }
-
-    fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
-        self.cells.borrow_mut(pos_index)
     }
 
     public fun borrow_cell_mut_with_request<Cell: key + store, P: copy + drop + store>(
@@ -292,6 +316,26 @@ module monopoly::monopoly {
     public fun settle_action_request<P: drop + copy + store>(request: &mut ActionRequest<P>) {
         assert!(!request.settled, EActionRequestAlreadySettled);
         request.settled = true;
+    }
+
+    public fun player_asset_of(
+        game: &Game,
+        player: address,
+    ): VecSet<u8>{
+        if (game.player_asset.contains(&player)){
+            let copy_asset = *game.player_asset.get(&player);
+            copy_asset
+        }else{
+            vec_set::empty<u8>()
+        }
+    }
+
+    public fun add_to_skips(
+        self: &mut Game,
+        player: address,
+        round: u8,
+    ){
+        self.skips.insert(player, round);
     }
 
     // === Init Function ===
@@ -385,12 +429,40 @@ module monopoly::monopoly {
         self.cells.add(pos_index, cell);
     }
 
+
     public fun remove_cell<CellType: key + store>(self: &mut Game, pos_index: u64): CellType {
         assert!(!self.is_gaming_ongoing(), EGameStillOngoing);
         self.cells.remove(pos_index)
     }
 
     // === Package Functions ===
+
+    public(package) fun remove_player_asset(
+        self: &mut Game, 
+        player: address,
+    ){
+        let (_, player_asset) = self.player_asset.remove(&player);
+        player_asset.into_keys().pop_back();
+        self.player_asset.insert(player, player_asset);
+    }
+
+    public(package) fun new_name_to_position(): NameToPosition{ NameToPosition{} }
+
+    public(package) fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
+        self.cells.borrow_mut(pos_index)
+    }
+
+    public(package) fun borrow_uid_mut(
+        self: &mut Game,
+    ): &mut UID{
+        &mut self.id
+    } 
+
+    public(package) fun borrow_uid (
+        self: &Game,
+    ): &UID{
+        &self.id
+    } 
 
     /// transfer TurnCap to game instance to determine the random number
     entry fun player_move(mut turn_cap: TurnCap, random: &Random, ctx: &mut TxContext): u8 {
@@ -608,6 +680,7 @@ module monopoly::monopoly {
             salary,
             assets: vec_set::empty(),
             balances: bag::new(ctx),
+            player_asset: vec_map::empty<address, VecSet<u8>>(),
             player_position: vec_map::from_keys_values(players, values),
             cells: object_bag::new(ctx),
             plays: 0,
@@ -626,6 +699,7 @@ module monopoly::monopoly {
             balances,
             cells,
             player_position: _,
+            player_asset: _,
             plays: _,
             skips: _,
         } = self;

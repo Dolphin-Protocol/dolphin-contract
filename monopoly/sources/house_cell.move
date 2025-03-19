@@ -1,19 +1,22 @@
 module monopoly::house_cell {
-    use monopoly::{monopoly::{Game, ActionRequest, AdminCap}, utils};
+    use monopoly::{monopoly::{Self, Game, ActionRequest, AdminCap, NameToPosition}, utils};
     use std::{string::String, type_name::{Self, TypeName}};
-    use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};
+    use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}, dynamic_field as df};
 
     // === Errors ===
 
     const EUnMatchedCoinType: u64 = 101;
     const ENoParameterBody: u64 = 103;
     const EPlayerNotHouseOwner: u64 = 104;
+    const EHouseNotRegistered: u64 = 105;
 
     // === Constants ===
 
     const VERSION: u64 = 1;
+    const BASE_BPS: u64 = 10_000;
 
     // === Structs ===
+
 
     public struct HouseRegistry has key {
         id: UID,
@@ -88,6 +91,7 @@ module monopoly::house_cell {
     // === Mutable Functions ===
 
     // === View Functions ===
+
     // Get house info from house cell
     public fun house(house_cell: &HouseCell): (VecMap<u8, u64>, VecMap<u8, u64>, VecMap<u8, u64>) {
         (house_cell.house.buy_prices, house_cell.house.sell_prices, house_cell.house.tolls)
@@ -189,6 +193,35 @@ module monopoly::house_cell {
         game.borrow_cell(pos_index)
     }
 
+    public fun contains_name(
+        registry: &HouseRegistry,
+        name: String,
+    ): bool{
+        registry.houses.contains(&name)
+    }
+
+    public fun sell_price_for_level(
+        self: &HouseCell,
+        level: u8,
+    ): u64{
+        *self.house.sell_prices.get(&level)     
+    }
+
+    public fun buy_price_for_level(
+        self: &HouseCell,
+        level: u8,
+    ): u64{
+        *self.house.buy_prices.get(&level)     
+    }
+
+    public fun toll_for_level(
+        self: &HouseCell,
+        level: u8,
+    ): u64{
+        *self.house.tolls.get(&level)     
+    }
+
+
     // === Admin Functions ===
 
     // create a new house cell
@@ -224,6 +257,21 @@ module monopoly::house_cell {
             sell_prices: _,
             tolls: _,
         } = house;
+    }
+
+    public fun add_name_to_position(
+        game: &mut Game,
+        name: String,
+        pos_index: u8,
+    ){
+        if (df::exists_(game.borrow_uid(), monopoly::new_name_to_position())){
+            let name_to_pos = df::borrow_mut<NameToPosition, VecMap<String, u8>>(game.borrow_uid_mut(), monopoly::new_name_to_position());
+            name_to_pos.insert(name, pos_index);
+        }else{
+            let mut name_to_pos = vec_map::empty();
+            name_to_pos.insert(name, pos_index);
+            df::add(game.borrow_uid_mut(), monopoly::new_name_to_position(), name_to_pos);
+        }
     }
 
     // add house to registry
@@ -408,6 +456,7 @@ module monopoly::house_cell {
         ctx: &mut TxContext,
     ) {
         let player = request.action_request_player();
+        
 
         let BuyArgument<T> {
             type_name,
@@ -457,6 +506,47 @@ module monopoly::house_cell {
 
         // consume ActionRequest and transfer new TurnCap to next player
         game.drop_action_request(request, ctx);
+    }
+
+    public(package) fun update_toll_by_chance(
+        self: &mut HouseCell,
+        bps: u64,
+    ){  
+        let keys = self.house.tolls.keys();
+        keys.do!(|key| {
+            let toll = self.house.tolls.get_mut(&key);
+            *toll = utils::u256_mul_div(*toll as u256, bps as u256, BASE_BPS as u256) as u64;
+        });
+    }
+
+    public(package) fun level_up_by_chance(
+        self: &mut HouseCell,
+    ){
+        let max_level = (self.house.tolls.keys().length() -1) as u8;
+        if (self.level < max_level){
+            self.level = self.level + 1;
+        };
+
+    }
+
+    public(package) fun level_down_by_chance(
+        self: &mut HouseCell,
+    ){
+        if (self.level > 0){
+            self.level = self.level - 1;
+        };
+    }
+    public(package) fun level_to_zero(
+        self: &mut HouseCell,
+    ){
+        self.level = 0;
+    }
+
+    public(package) fun assert_if_not_in_registry(
+        registry: &HouseRegistry,
+        name: String,
+    ){
+        assert!(registry.contains_name(name), EHouseNotRegistered);
     }
 
     // === Private Functions ===
