@@ -301,7 +301,7 @@ public fun new_chance_cell(
 #[allow(lint(public_random))]
 public fun pick_chance_num(
     registry: &ChanceRegistry,
-    _: &AdminCap,
+    _: &Game,
     rand: &Random,
     ctx: &mut TxContext,
 ): IndexReceipt{
