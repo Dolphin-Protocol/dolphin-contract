@@ -263,6 +263,8 @@ module monopoly::monopoly_tests {
             let salary = 100;
 
             let mut game = admin_cap.new(players, max_rounds, max_steps, 100, ctx(s));
+            let house_plugin_info = house_cell::empty_house_plugin(&game);
+            game.add_and_init_plugin(house_cell::new_house_plugin(), house_plugin_info);
 
             // 1) cell setup
             // we will have 20 cells in 6x6 board game
@@ -344,12 +346,13 @@ module monopoly::monopoly_tests {
                         house_idx = house_idx + 1;
                     };
                 });
+
+            debug::print(house_cell::borrow_house_plugin_info(&game).borrow_name_to_positon());
             test::return_shared(house_registry);
             test::return_shared(chance_registry);
 
             };
             
-
             // 2) Balance setup
             {
                 let supply = supply::new_supply(&admin_cap);
@@ -728,8 +731,7 @@ module monopoly::monopoly_tests {
                 abort 2;
             };
             assert!(idx == 0);
-            
-            assert!(game.borrow_cell<HouseCell>(game.house_position_of(3u64.to_string()) as u64).level() == 0);
+            assert!(game.borrow_cell<HouseCell>(house_cell::house_position_of(&game, 3u64.to_string())  as u64).level() == 0);
 
             assert!(game.player_position_of(d) == 10);
             assert!(game.current_round() == 0);
@@ -971,7 +973,7 @@ module monopoly::monopoly_tests {
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
             
-            let idx_receipt = chance_registry.pick_chance_num(&admin_cap, &random, s.ctx());
+            let idx_receipt = chance_registry.pick_chance_num(&game, &random, s.ctx());
             
             
             let idx = idx_receipt.index();
@@ -1028,9 +1030,8 @@ module monopoly::monopoly_tests {
             assert!(game.plays() == 6);
             assert!(idx == 57);
 
-            assert!(game.borrow_cell<HouseCell>(game.house_position_of(7u64.to_string()) as u64).level() == 2);
+            assert!(game.borrow_cell<HouseCell>(house_cell::house_position_of(&game, 7u64.to_string())  as u64).level() == 2);
             
-
             s.return_to_sender(game);
             test::return_shared(random);
             s.return_to_sender(admin_cap);
@@ -1061,7 +1062,7 @@ module monopoly::monopoly_tests {
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
             
-            let idx_receipt = chance_registry.pick_chance_num(&admin_cap, &random, s.ctx());
+            let idx_receipt = chance_registry.pick_chance_num(&game, &random, s.ctx());
 
             
             let idx = idx_receipt.index();

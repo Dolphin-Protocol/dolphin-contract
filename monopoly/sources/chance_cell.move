@@ -4,8 +4,11 @@ module monopoly::chance_cell;
 use monopoly::{
     monopoly::{AdminCap, Game, ActionRequest, },
     house_cell::{
+        Self,
         HouseRegistry,
-        HouseCell
+        HouseCell,
+        HousePluginInfo,
+        HousePlugin
     },
     supply::{Monopoly}
     // mt::{MT},
@@ -14,7 +17,8 @@ use monopoly::{
 use sui::{
     vec_set::{Self, VecSet},
     random::{ Random},
-    event::{Self,}
+    event::{Self,},
+    dynamic_field as df,
 };
 
 use std::{
@@ -419,10 +423,10 @@ public fun initialize_balance_chance(
                 let balance_manager = game.balance_mut<Monopoly>();
                 balance_manager.saturating_sub_balance(player, chance.amount);
 
-                if (game.player_asset_of(player).size() > 0){
+                if (house_cell::player_asset_of(game, player).size() > 0){
                     //remove  all assets
-                    game.player_asset_of(player).size().do!<u64>(|_| {
-                        game.remove_player_asset(player);
+                    house_cell::player_asset_of(game, player).size().do!<u64>(|_| {
+                        house_cell::remove_player_asset(game, player);
                     });
                 };  
 
@@ -433,12 +437,12 @@ public fun initialize_balance_chance(
                 // Sell the player's assets to make a payment   
                 let mut asset_value = 0;
                 while(true){
-                    let house_position = game.player_asset_of(player).keys().length() - 1;
+                    let house_position = house_cell::player_asset_of(game, player).keys().length() - 1;
                     let house_cell = game.borrow_cell_mut<HouseCell>(house_position as u64);
                     let sell_price = house_cell.sell_price_for_level(house_cell.level());
                     asset_value = asset_value + sell_price;
                     
-                    game.remove_player_asset(player);
+                    house_cell::remove_player_asset(game, player);
                     
                     let current_value = player_value + asset_value;
                     if (current_value >= chance.amount){
@@ -472,7 +476,7 @@ public fun initialize_toll_chance(
     game: &mut Game,
     chance: TollChance,
 ){
-    let house_position = game.house_position_of(chance.name);
+    let house_position = house_cell::house_position_of(game, chance.name);
     let house_cell = game.borrow_cell_mut<HouseCell>(house_position as u64);
 
     house_cell.update_toll_by_chance(chance.bps);
@@ -517,7 +521,7 @@ public fun initialize_house_chance(
     game.config_parameter(request, chance);
     request.settle_action_request();
 
-    let house_position = game.house_position_of(chance.name);
+    let house_position = house_cell::house_position_of(game, chance.name);
     {
         let house_cell = game.borrow_cell_mut<HouseCell>(house_position as u64);
 
@@ -607,7 +611,7 @@ fun calculate_total_asset_value_of (
     game: &Game,
     player: address
 ): u64{
-    let asset_idxs = (game.player_asset_of(player)).into_keys();
+    let asset_idxs = (house_cell::player_asset_of(game, player)).into_keys();
         let mut player_asset_value = 0;
         asset_idxs.do!(|idx| {
             let level = game.borrow_cell<HouseCell>(idx as u64 ).level();

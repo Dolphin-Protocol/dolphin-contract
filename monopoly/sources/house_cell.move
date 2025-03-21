@@ -1,5 +1,5 @@
 module monopoly::house_cell {
-    use monopoly::{monopoly::{Self, Game, ActionRequest, AdminCap, NameToPosition}, utils};
+    use monopoly::{monopoly::{Self, Game, ActionRequest, AdminCap}, utils};
     use std::{string::String, type_name::{Self, TypeName}};
     use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}, dynamic_field as df};
 
@@ -9,6 +9,8 @@ module monopoly::house_cell {
     const ENoParameterBody: u64 = 103;
     const EPlayerNotHouseOwner: u64 = 104;
     const EHouseNotRegistered: u64 = 105;
+    const EHousePluginNotAllowed: u64 = 106;
+    const ENameAlreadyRecorded: u64 = 107;
 
     // === Constants ===
 
@@ -16,6 +18,13 @@ module monopoly::house_cell {
     const BASE_BPS: u64 = 10_000;
 
     // === Structs ===
+
+    public struct HousePlugin has copy, drop, store{}
+
+    public struct HousePluginInfo has store {
+        player_assets: VecMap<address, VecSet<u8>>,
+        name_to_position: VecMap<String, u8>,
+    }
 
 
     public struct HouseRegistry has key {
@@ -91,6 +100,36 @@ module monopoly::house_cell {
     // === Mutable Functions ===
 
     // === View Functions ===
+
+    public fun borrow_house_plugin_info(
+        game: &Game,
+    ): &HousePluginInfo{
+        df::borrow(game.borrow_uid(), new_house_plugin())
+    }
+
+    public fun borrow_player_assets(
+        house_plugin: &HousePluginInfo
+    ): &VecMap<address, VecSet<u8>>{
+        &house_plugin.player_assets
+    }
+
+    public fun borrow_player_assets_mut(
+        house_plugin: &mut HousePluginInfo
+    ): &mut VecMap<address, VecSet<u8>>{
+        &mut house_plugin.player_assets
+    }
+
+    public fun borrow_name_to_positon(
+        house_plugin_info: &HousePluginInfo
+    ): &VecMap<String, u8>{
+        &house_plugin_info.name_to_position
+    }
+
+    public fun borrow_name_to_posito_mut(
+        house_plugin_info: &mut HousePluginInfo
+    ): &mut VecMap<String, u8>{
+        &mut house_plugin_info.name_to_position
+    }
 
     // Get house info from house cell
     public fun house(house_cell: &HouseCell): (VecMap<u8, u64>, VecMap<u8, u64>, VecMap<u8, u64>) {
@@ -221,8 +260,67 @@ module monopoly::house_cell {
         *self.house.tolls.get(&level)     
     }
 
+    public fun house_position_of (
+        game: &Game,
+        name: String,
+    ): u8{
+        let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(game.borrow_uid(), new_house_plugin());
+        let name_to_position = house_plugin_info.name_to_position;
+        *name_to_position.get(&name)
+    }
+
+    public fun player_asset_of(
+        game: &Game,
+        player: address,
+    ): VecSet<u8>{
+
+        if (df::exists_(game.borrow_uid(), new_house_plugin())){
+            let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(game.borrow_uid(), new_house_plugin());
+            if (house_plugin_info.player_assets.contains(&player)){
+                let copy_asset = *house_plugin_info.player_assets.get(&player);
+                copy_asset
+            }else{
+                vec_set::empty<u8>()
+            }
+        }else{
+            abort EHousePluginNotAllowed
+        }
+    }
 
     // === Admin Functions ===
+
+    public fun add_player_asset(
+        game: &mut Game,
+        player: address,
+        pos_index: u8,
+    ){
+        if (df::exists_(game.borrow_uid(), new_house_plugin())){
+            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(game.borrow_uid_mut(), new_house_plugin());
+            let mut player_assets = house_plugin_info.player_assets;
+            if (!player_assets.contains(&player)){
+                let pos_indexes = vec_set::singleton(pos_index);
+                player_assets.insert(player, pos_indexes);
+            }else{
+                let player_asset = player_assets.get_mut(&player);
+                player_asset.insert(pos_index);
+            };
+        }else{
+            abort EHousePluginNotAllowed
+        }
+    }
+
+    public fun remove_player_asset(
+        game: &mut Game, 
+        player: address,
+    ){
+        let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(game.borrow_uid_mut(), new_house_plugin());
+        let player_assets = house_plugin_info.borrow_player_assets_mut();
+
+        let (_, player_asset) = player_assets.remove(&player);
+        player_asset.into_keys().pop_back();
+
+        player_assets.insert(player, player_asset);
+    }   
 
     // create a new house cell
     public fun new_house_cell(
@@ -264,15 +362,21 @@ module monopoly::house_cell {
         name: String,
         pos_index: u8,
     ){
-        if (df::exists_(game.borrow_uid(), monopoly::new_name_to_position())){
-            let name_to_pos = df::borrow_mut<NameToPosition, VecMap<String, u8>>(game.borrow_uid_mut(), monopoly::new_name_to_position());
-            name_to_pos.insert(name, pos_index);
+        if (df::exists_(game.borrow_uid(), new_house_plugin())){
+            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(game.borrow_uid_mut(), new_house_plugin());
+            let mut name_to_position = house_plugin_info.borrow_name_to_posito_mut();
+            if (!name_to_position.contains(&name)){
+                name_to_position.insert(name, pos_index);
+            }else{
+                abort ENameAlreadyRecorded
+            };
         }else{
-            let mut name_to_pos = vec_map::empty();
-            name_to_pos.insert(name, pos_index);
-            df::add(game.borrow_uid_mut(), monopoly::new_name_to_position(), name_to_pos);
+            abort EHousePluginNotAllowed
         }
     }
+
+    
+
 
     // add house to registry
     public fun add_house_to_registry(
@@ -403,6 +507,15 @@ module monopoly::house_cell {
                 })
             };
         };
+    }
+
+    public fun empty_house_plugin(
+        _: &Game,
+    ): HousePluginInfo{
+        HousePluginInfo{
+            player_assets: vec_map::empty<address, VecSet<u8>>(),
+            name_to_position: vec_map::empty<String, u8>(),
+        }
     }
 
     // user execute buy or upgrade the house
@@ -542,6 +655,10 @@ module monopoly::house_cell {
         self.level = 0;
     }
 
+    public(package) fun new_house_plugin(): HousePlugin{
+        HousePlugin{}
+    }
+
     public(package) fun assert_if_not_in_registry(
         registry: &HouseRegistry,
         name: String,
@@ -557,6 +674,7 @@ module monopoly::house_cell {
             tolls: self.houses.get(&name).tolls,
         }
     }
+
     // === Test Functions ===
     #[test_only]
     public fun init_for_testing(ctx: &mut TxContext) {

@@ -39,9 +39,9 @@ module monopoly::monopoly {
     const EActionRequestAlreadyConfig: u64 = 110;
     const EGameStillOngoing: u64 = 111;
     const EKeyNotExisted: u64 = 112;
+    const EPluginTypeNotAllowed:u64 =  113;
+    const EPluginAlreadyExisted: u64 = 114;
     // === Structs ===
-    // DF Key
-    public struct NameToPosition has copy, store, drop{}
 
     public struct AdminCap has key, store{
         id: UID,
@@ -50,6 +50,7 @@ module monopoly::monopoly {
     public struct Game has key {
         id: UID,
         versions: VecSet<u64>,
+        plugin_types: VecSet<TypeName>,
         max_round: u64,
         max_steps: u8,
         salary: u64,
@@ -60,7 +61,6 @@ module monopoly::monopoly {
         player_position: VecMap<address, u64>,
         /// positions of cells in the map
         /// Mapping<u64, T>
-        player_asset: VecMap<address, VecSet<u8>>,
         cells: ObjectBag,
         // times of each player do the actions
         plays: u64,
@@ -243,15 +243,6 @@ module monopoly::monopoly {
         self.current_round() < self.max_round
     }
 
-    public fun house_position_of (
-        self: &Game,
-        name: String,
-    ): u8{
-        assert!(df::exists_(&self.id, NameToPosition{}), EKeyNotExisted);
-        let name_to_position = df::borrow<NameToPosition, VecMap<String, u8>>(&self.id, NameToPosition{});
-        *name_to_position.get(&name)
-    }
-
     public fun skips(
         self: &Game,
     ): &VecMap<address, u8>{
@@ -322,18 +313,6 @@ module monopoly::monopoly {
     public fun settle_action_request<P: drop + copy + store>(request: &mut ActionRequest<P>) {
         assert!(!request.settled, EActionRequestAlreadySettled);
         request.settled = true;
-    }
-
-    public fun player_asset_of(
-        game: &Game,
-        player: address,
-    ): VecSet<u8>{
-        if (game.player_asset.contains(&player)){
-            let copy_asset = *game.player_asset.get(&player);
-            copy_asset
-        }else{
-            vec_set::empty<u8>()
-        }
     }
 
     public fun add_to_skips(
@@ -441,18 +420,20 @@ module monopoly::monopoly {
         self.cells.remove(pos_index)
     }
 
-    // === Package Functions ===
-
-    public(package) fun remove_player_asset(
-        self: &mut Game, 
-        player: address,
+    public fun add_and_init_plugin<K: store+ copy + drop, V: store>(
+        self: &mut Game,
+        key: K,
+        value: V,
     ){
-        let (_, player_asset) = self.player_asset.remove(&player);
-        player_asset.into_keys().pop_back();
-        self.player_asset.insert(player, player_asset);
+        if (!df::exists_(&mut self.id, key)){
+            df::add(&mut self.id, key, value);
+        }else{
+            abort EPluginAlreadyExisted
+        }
     }
 
-    public(package) fun new_name_to_position(): NameToPosition{ NameToPosition{} }
+    // === Package Functions ===
+
 
     public(package) fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
         self.cells.borrow_mut(pos_index)
@@ -681,12 +662,12 @@ module monopoly::monopoly {
         Game {
             id: object::new(ctx),
             versions: vec_set::singleton(MODULE_VERSION),
+            plugin_types: vec_set::empty(),
             max_round,
             max_steps,
             salary,
             assets: vec_set::empty(),
             balances: bag::new(ctx),
-            player_asset: vec_map::empty<address, VecSet<u8>>(),
             player_position: vec_map::from_keys_values(players, values),
             cells: object_bag::new(ctx),
             plays: 0,
@@ -698,6 +679,7 @@ module monopoly::monopoly {
         let Game {
             id,
             versions: _,
+            plugin_types: _,
             max_round: _,
             max_steps: _,
             salary: _,
@@ -705,7 +687,6 @@ module monopoly::monopoly {
             balances,
             cells,
             player_position: _,
-            player_asset: _,
             plays: _,
             skips: _,
         } = self;
