@@ -425,6 +425,7 @@ module monopoly::monopoly {
         key: K,
         value: V,
     ){
+        assert!(self.plugin_types.contains(&type_name::get<K>()), EPluginTypeNotAllowed);
         if (!df::exists_(&mut self.id, key)){
             df::add(&mut self.id, key, value);
         }else{
@@ -439,14 +440,16 @@ module monopoly::monopoly {
         self.cells.borrow_mut(pos_index)
     }
 
-    public(package) fun borrow_uid_mut(
+    public(package) fun borrow_uid_mut <PluginType: store + copy + drop>(
         self: &mut Game,
+        _: PluginType,
     ): &mut UID{
         &mut self.id
     } 
 
-    public(package) fun borrow_uid (
+    public(package) fun borrow_uid <PluginType: store + copy + drop> (
         self: &Game,
+        _: PluginType,
     ): &UID{
         &self.id
     } 

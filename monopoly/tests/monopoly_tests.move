@@ -263,8 +263,7 @@ module monopoly::monopoly_tests {
             let salary = 100;
 
             let mut game = admin_cap.new(players, max_rounds, max_steps, 100, ctx(s));
-            let house_plugin_info = house_cell::empty_house_plugin(&game);
-            game.add_and_init_plugin(house_cell::new_house_plugin(), house_plugin_info);
+            house_cell::initialize_states(&mut game);
 
             // 1) cell setup
             // we will have 20 cells in 6x6 board game
