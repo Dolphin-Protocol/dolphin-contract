@@ -1,6 +1,6 @@
 module monopoly::utils {
     const U256_MAX: u256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
-    
+
     // === Errors ===
     const DIVIDE_BY_ZERO: u64 = 001;
     const CALCULATION_OVERFLOW: u64 = 002;
@@ -12,9 +12,10 @@ module monopoly::utils {
 
         res
     }
+
     /// Return the value of a * b / c
     public fun u256_mul_div(a: u256, b: u256, c: u256): u256 {
-        let (a , b) = if (a >= b) {
+        let (a, b) = if (a >= b) {
             (a, b)
         } else {
             (b, a)
@@ -29,6 +30,7 @@ module monopoly::utils {
             a * b / c
         }
     }
+
     /// Return value of x * y with checking the overflow
     public fun checked_mul(x: u256, y: u256): u256 {
         assert!(is_safe_mul(x, y), CALCULATION_OVERFLOW);
