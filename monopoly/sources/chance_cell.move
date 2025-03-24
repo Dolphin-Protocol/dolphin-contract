@@ -374,7 +374,7 @@ module monopoly::chance_cell {
                     while (true) {
                         let house_position =
                             house_cell::player_asset_of(game, player).keys().length() - 1;
-                        let house_cell = game.borrow_cell_mut<HouseCell>(house_position as u64);
+                        let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(request, house_position as u64);
                         let sell_price = house_cell.sell_price_for_level(house_cell.level());
                         asset_value = asset_value + sell_price;
 
@@ -410,7 +410,7 @@ module monopoly::chance_cell {
         chance: TollChance,
     ) {
         let house_position = house_cell::house_position_of(game, chance.name);
-        let house_cell = game.borrow_cell_mut<HouseCell>(house_position as u64);
+        let house_cell: &mut HouseCell= game.borrow_cell_mut_with_request(request, house_position as u64);
 
         house_cell.update_toll_by_chance(chance.bps);
 
@@ -455,7 +455,7 @@ module monopoly::chance_cell {
 
         let house_position = house_cell::house_position_of(game, chance.name);
         {
-            let house_cell = game.borrow_cell_mut<HouseCell>(house_position as u64);
+            let house_cell: &mut HouseCell= game.borrow_cell_mut_with_request(request, house_position as u64);
 
             if (chance.is_level_up) {
                 house_cell.level_up_by_chance();
@@ -526,8 +526,9 @@ module monopoly::chance_cell {
         let asset_idxs = (house_cell::player_asset_of(game, player)).into_keys();
         let mut player_asset_value = 0;
         asset_idxs.do!(|idx| {
-            let level = game.borrow_cell<HouseCell>(idx as u64).level();
-            let (_, sell_prices, _) = game.borrow_cell<HouseCell>(idx as u64).house();
+            let house_cell: &HouseCell = game.borrow_cell(idx as u64);
+            let level = house_cell.level();
+            let (_, sell_prices, _) = house_cell.house();
             let sell_price = *sell_prices.get(&level);
             player_asset_value = player_asset_value + sell_price;
         });

@@ -262,14 +262,14 @@ module monopoly::monopoly_tests {
         {
             let admin_cap = s.take_from_sender<AdminCap>();
 
-            // order insetion determine plays order
+            // order insertion determine plays order
             let players = vector[b, c, d, e];
             let max_rounds = 4;
             let max_steps = 12;
             let salary = 100;
 
             let mut game = admin_cap.new(players, max_rounds, max_steps, 100, ctx(s));
-            house_cell::initialize_states(&mut game);
+            house_cell::initialize_states(&mut game, &admin_cap);
 
             // 1) cell setup
             // we will have 20 cells in 6x6 board game
@@ -393,7 +393,6 @@ module monopoly::monopoly_tests {
                     };
                 });
 
-                debug::print(house_cell::borrow_house_plugin_info(&game).borrow_name_to_positon());
                 test::return_shared(house_registry);
                 test::return_shared(chance_registry);
             };

@@ -30,7 +30,7 @@ module monopoly::monopoly {
     const EActionRequestParametersdNotConfig: u64 = 109;
     const EActionRequestAlreadyConfig: u64 = 110;
     const EGameStillOngoing: u64 = 111;
-    const EKeyNotExisted: u64 = 112;
+    const ENotAuthorizedPlugin: u64 = 112;
     const EPluginTypeNotAllowed: u64 = 113;
     const EPluginAlreadyExisted: u64 = 114;
     // === Structs ===
@@ -42,7 +42,7 @@ module monopoly::monopoly {
     public struct Game has key {
         id: UID,
         versions: VecSet<u64>,
-        plugin_types: VecSet<TypeName>,
+        plugins: VecSet<TypeName>,
         max_round: u64,
         max_steps: u8,
         salary: u64,
@@ -261,10 +261,19 @@ module monopoly::monopoly {
 
     public fun borrow_cell_mut_with_request<Cell: key + store, P: copy + drop + store>(
         self: &mut Game,
-        request: &ActionRequest<P>,
+        _request: &ActionRequest<P>,
+        pos_index: u64,
     ): &mut Cell {
-        self.borrow_cell_mut(request.pos_index)
+        self.borrow_cell_mut(pos_index)
     }
+
+    fun borrow_cell_mut<Cell: key + store>(
+        self: &mut Game,
+        pos_index: u64,
+    ): &mut Cell {
+        self.cells.borrow_mut(pos_index)
+    }
+
 
     public fun action_request_parameters_mut<P: drop + copy + store>(
         req: &mut ActionRequest<P>,
@@ -404,39 +413,30 @@ module monopoly::monopoly {
         self.cells.remove(pos_index)
     }
 
-    public fun add_and_init_plugin<K: store + copy + drop, V: store>(
+    public fun add_and_init_plugin<Plugin: store + copy + drop, V: store>(
         self: &mut Game,
-        key: K,
+        _: &AdminCap,
+        key: Plugin,
         value: V,
     ) {
-        assert!(self.plugin_types.contains(&type_name::get<K>()), EPluginTypeNotAllowed);
-        if (!df::exists_(&mut self.id, key)) {
-            df::add(&mut self.id, key, value);
-        } else {
-            abort EPluginAlreadyExisted
-        }
+        assert!(!self.plugins.contains(&type_name::get<Plugin>()), EPluginAlreadyExisted);
+
+        self.plugins.insert(type_name::get<Plugin>());
+        df::add(&mut self.id, key, value);
     }
 
     // === Package Functions ===
 
-    public(package) fun borrow_cell_mut<Cell: key + store>(
-        self: &mut Game,
-        pos_index: u64,
-    ): &mut Cell {
-        self.cells.borrow_mut(pos_index)
-    }
-
-    public(package) fun borrow_uid_mut<PluginType: store + copy + drop>(
+    public fun borrow_uid_mut<PluginType: store + copy + drop>(
         self: &mut Game,
         _: PluginType,
     ): &mut UID {
+        self.assert_plugin<PluginType>();
         &mut self.id
     }
 
-    public(package) fun borrow_uid<PluginType: store + copy + drop>(
-        self: &Game,
-        _: PluginType,
-    ): &UID {
+    public fun borrow_uid<PluginType: store + copy + drop>(self: &Game, _: PluginType): &UID {
+        self.assert_plugin<PluginType>();
         &self.id
     }
 
@@ -651,7 +651,7 @@ module monopoly::monopoly {
         Game {
             id: object::new(ctx),
             versions: vec_set::singleton(MODULE_VERSION),
-            plugin_types: vec_set::empty(),
+            plugins: vec_set::empty(),
             max_round,
             max_steps,
             salary,
@@ -668,7 +668,7 @@ module monopoly::monopoly {
         let Game {
             id,
             versions: _,
-            plugin_types: _,
+            plugins: _,
             max_round: _,
             max_steps: _,
             salary: _,
@@ -700,6 +700,10 @@ module monopoly::monopoly {
         } else {
             new_position
         }
+    }
+
+    fun assert_plugin<Plugin: copy + drop + store>(self: &Game) {
+        assert!(self.plugins.contains(&type_name::get<Plugin>()), ENotAuthorizedPlugin);
     }
 
     // === Test Functions ===

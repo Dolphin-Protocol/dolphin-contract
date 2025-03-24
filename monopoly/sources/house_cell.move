@@ -278,17 +278,19 @@ module monopoly::house_cell {
     }
 
     // === Admin Functions ===
-    public fun initialize_states(game: &mut Game) {
-        assert!(
-            !df::exists_(game.borrow_uid_mut(new_house_plugin()), new_house_plugin()),
-            EHousePluginAlreadyExisted,
+    public fun initialize_states(game: &mut Game, cap: &AdminCap) {
+        game.add_and_init_plugin(
+            cap,
+            HousePlugin {},
+            HousePluginInfo {
+                player_assets: vec_map::empty<address, VecSet<u8>>(),
+                name_to_position: vec_map::empty<String, u8>(),
+            },
         );
-        let house_plugin_info = empty_house_plugin(game);
-        df::add(game.borrow_uid_mut(new_house_plugin()), new_house_plugin(), house_plugin_info);
     }
 
     public fun add_player_asset(game: &mut Game, player: address, pos_index: u8) {
-        if (df::exists_(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin())) {
+        if (df::exists_(game.borrow_uid(new_house_plugin()), new_house_plugin())) {
             let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(
                 game.borrow_uid_mut<HousePlugin>(new_house_plugin()),
                 new_house_plugin(),
@@ -502,7 +504,7 @@ module monopoly::house_cell {
         };
     }
 
-    public fun empty_house_plugin(_: &Game): HousePluginInfo {
+    public fun empty_house_plugin(): HousePluginInfo {
         HousePluginInfo {
             player_assets: vec_map::empty<address, VecSet<u8>>(),
             name_to_position: vec_map::empty<String, u8>(),
@@ -559,8 +561,6 @@ module monopoly::house_cell {
         game: &mut Game,
         ctx: &mut TxContext,
     ) {
-        let player = request.action_request_player();
-
         let BuyArgument<T> {
             type_name,
             player_balance: _,
@@ -571,18 +571,18 @@ module monopoly::house_cell {
         } = request.action_request_remove_parameters(game);
 
         assert!(type_name::get<T>() == type_name, EUnMatchedCoinType);
-
+        let (game_id, player, pos_index) = request.action_request_info();
         // validate price
         if (purchased && eligible) {
             // update player's balance
             let balance_manager = game.balance_mut<T>();
             balance_manager.sub_balance(
-                request.action_request_player(),
+                player,
                 house_price,
             );
 
             // update house owner & state
-            let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(&request);
+            let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(&request, pos_index);
             house_cell.level = std::u8::min(level + 1, house_cell.max_level());
 
             if (house_cell.owner.is_none()) {
@@ -593,7 +593,6 @@ module monopoly::house_cell {
             };
         };
 
-        let (game_id, player, pos_index) = request.action_request_info();
         let action_request_id = object::id(&request);
 
         let house_cell = game.borrow_cell<HouseCell>(pos_index);
