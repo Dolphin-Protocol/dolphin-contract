@@ -1,6 +1,6 @@
 #[test_only]
 #[allow(unused)]
-module monopoly::monopoly_tests {
+module monopoly::monopoly_with_chance_cell_tests {
     use monopoly::{
         cell::{Self, Cell, DoNothingArgument},
         chance_cell::{
