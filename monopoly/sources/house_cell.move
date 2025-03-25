@@ -1,7 +1,13 @@
 module monopoly::house_cell {
-    use monopoly::{monopoly::{Self, Game, ActionRequest, AdminCap}, utils};
+    use monopoly::{monopoly::{Game, ActionRequest, AdminCap}, utils};
     use std::{string::String, type_name::{Self, TypeName}};
-    use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}, dynamic_field as df};
+    use sui::{
+        dynamic_field as df,
+        event,
+        transfer::Receiving,
+        vec_map::{Self, VecMap},
+        vec_set::{Self, VecSet}
+    };
 
     // === Errors ===
 
@@ -20,13 +26,12 @@ module monopoly::house_cell {
 
     // === Structs ===
 
-    public struct HousePlugin has copy, drop, store{}
+    public struct HousePlugin has copy, drop, store {}
 
     public struct HousePluginInfo has store {
         player_assets: VecMap<address, VecSet<u8>>,
         name_to_position: VecMap<String, u8>,
     }
-
 
     public struct HouseRegistry has key {
         id: UID,
@@ -102,36 +107,30 @@ module monopoly::house_cell {
 
     // === View Functions ===
 
-    public fun borrow_house_plugin_info(
-        game: &Game,
-    ): &HousePluginInfo{
+    public fun borrow_house_plugin_info(game: &Game): &HousePluginInfo {
         df::borrow<HousePlugin, HousePluginInfo>(
             game.borrow_uid<HousePlugin>(new_house_plugin()),
-                    new_house_plugin()
+            new_house_plugin(),
         )
     }
 
-    public fun borrow_player_assets(
-        house_plugin: &HousePluginInfo
-    ): &VecMap<address, VecSet<u8>>{
+    public fun borrow_player_assets(house_plugin: &HousePluginInfo): &VecMap<address, VecSet<u8>> {
         &house_plugin.player_assets
     }
 
     public fun borrow_player_assets_mut(
-        house_plugin: &mut HousePluginInfo
-    ): &mut VecMap<address, VecSet<u8>>{
+        house_plugin: &mut HousePluginInfo,
+    ): &mut VecMap<address, VecSet<u8>> {
         &mut house_plugin.player_assets
     }
 
-    public fun borrow_name_to_positon(
-        house_plugin_info: &HousePluginInfo
-    ): &VecMap<String, u8>{
+    public fun borrow_name_to_positon(house_plugin_info: &HousePluginInfo): &VecMap<String, u8> {
         &house_plugin_info.name_to_position
     }
 
     public fun borrow_name_to_posito_mut(
-        house_plugin_info: &mut HousePluginInfo
-    ): &mut VecMap<String, u8>{
+        house_plugin_info: &mut HousePluginInfo,
+    ): &mut VecMap<String, u8> {
         &mut house_plugin_info.name_to_position
     }
 
@@ -236,102 +235,91 @@ module monopoly::house_cell {
         game.borrow_cell(pos_index)
     }
 
-    public fun contains_name(
-        registry: &HouseRegistry,
-        name: String,
-    ): bool{
+    public fun contains_name(registry: &HouseRegistry, name: String): bool {
         registry.houses.contains(&name)
     }
 
-    public fun sell_price_for_level(
-        self: &HouseCell,
-        level: u8,
-    ): u64{
-        *self.house.sell_prices.get(&level)     
+    public fun sell_price_for_level(self: &HouseCell, level: u8): u64 {
+        *self.house.sell_prices.get(&level)
     }
 
-    public fun buy_price_for_level(
-        self: &HouseCell,
-        level: u8,
-    ): u64{
-        *self.house.buy_prices.get(&level)     
+    public fun buy_price_for_level(self: &HouseCell, level: u8): u64 {
+        *self.house.buy_prices.get(&level)
     }
 
-    public fun toll_for_level(
-        self: &HouseCell,
-        level: u8,
-    ): u64{
-        *self.house.tolls.get(&level)     
+    public fun toll_for_level(self: &HouseCell, level: u8): u64 {
+        *self.house.tolls.get(&level)
     }
 
-    public fun house_position_of (
-        game: &Game,
-        name: String,
-    ): u8{
-        let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin());
+    public fun house_position_of(game: &Game, name: String): u8 {
+        let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(
+            game.borrow_uid<HousePlugin>(new_house_plugin()),
+            new_house_plugin(),
+        );
         let name_to_position = house_plugin_info.name_to_position;
         *name_to_position.get(&name)
     }
 
-    public fun player_asset_of(
-        game: &Game,
-        player: address,
-    ): VecSet<u8>{
-        if (df::exists_(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin())){
-            let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(game.borrow_uid<HousePlugin>( new_house_plugin() ), new_house_plugin());
-            if (house_plugin_info.player_assets.contains(&player)){
+    public fun player_asset_of(game: &Game, player: address): VecSet<u8> {
+        if (df::exists_(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin())) {
+            let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(
+                game.borrow_uid<HousePlugin>(new_house_plugin()),
+                new_house_plugin(),
+            );
+            if (house_plugin_info.player_assets.contains(&player)) {
                 let copy_asset = *house_plugin_info.player_assets.get(&player);
                 copy_asset
-            }else{
+            } else {
                 vec_set::empty<u8>()
             }
-        }else{
+        } else {
             abort EHousePluginNotAllowed
         }
     }
 
     // === Admin Functions ===
-    public fun initialize_states (
-        game: &mut Game,
-    ){
-        assert!(!df::exists_(game.borrow_uid_mut(new_house_plugin()), new_house_plugin()), EHousePluginAlreadyExisted);
-            let house_plugin_info = empty_house_plugin(game);
-        df::add(game.borrow_uid_mut(new_house_plugin()), new_house_plugin(), house_plugin_info);
+    public fun initialize_states(game: &mut Game, cap: &AdminCap) {
+        game.add_and_init_plugin(
+            cap,
+            HousePlugin {},
+            HousePluginInfo {
+                player_assets: vec_map::empty<address, VecSet<u8>>(),
+                name_to_position: vec_map::empty<String, u8>(),
+            },
+        );
     }
 
-
-    public fun add_player_asset(
-        game: &mut Game,
-        player: address,
-        pos_index: u8,
-    ){
-        if (df::exists_(game.borrow_uid<HousePlugin>( new_house_plugin() ), new_house_plugin())){
-            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(game.borrow_uid_mut<HousePlugin>(new_house_plugin()), new_house_plugin());
+    public fun add_player_asset(game: &mut Game, player: address, pos_index: u8) {
+        if (df::exists_(game.borrow_uid(new_house_plugin()), new_house_plugin())) {
+            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(
+                game.borrow_uid_mut<HousePlugin>(new_house_plugin()),
+                new_house_plugin(),
+            );
             let mut player_assets = house_plugin_info.player_assets;
-            if (!player_assets.contains(&player)){
+            if (!player_assets.contains(&player)) {
                 let pos_indexes = vec_set::singleton(pos_index);
                 player_assets.insert(player, pos_indexes);
-            }else{
+            } else {
                 let player_asset = player_assets.get_mut(&player);
                 player_asset.insert(pos_index);
             };
-        }else{
+        } else {
             abort EHousePluginNotAllowed
         }
     }
 
-    public fun remove_player_asset(
-        game: &mut Game, 
-        player: address,
-    ){
-        let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(game.borrow_uid_mut<HousePlugin>(new_house_plugin()), new_house_plugin());
+    public fun remove_player_asset(game: &mut Game, player: address) {
+        let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(
+            game.borrow_uid_mut<HousePlugin>(new_house_plugin()),
+            new_house_plugin(),
+        );
         let player_assets = house_plugin_info.borrow_player_assets_mut();
 
         let (_, player_asset) = player_assets.remove(&player);
         player_asset.into_keys().pop_back();
 
         player_assets.insert(player, player_asset);
-    }   
+    }
 
     // create a new house cell
     public fun new_house_cell(
@@ -368,23 +356,23 @@ module monopoly::house_cell {
         } = house;
     }
 
-    public fun add_name_to_position(
-        game: &mut Game,
-        name: String,
-        pos_index: u8,
-    ){
-        if (df::exists_(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin())){
-            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(game.borrow_uid_mut<HousePlugin>(new_house_plugin()), new_house_plugin());
+    public fun add_name_to_position(game: &mut Game, name: String, pos_index: u8) {
+        if (df::exists_(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin())) {
+            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(
+                game.borrow_uid_mut<HousePlugin>(new_house_plugin()),
+                new_house_plugin(),
+            );
             let name_to_position = house_plugin_info.borrow_name_to_posito_mut();
-            if (!name_to_position.contains(&name)){
+            if (!name_to_position.contains(&name)) {
                 name_to_position.insert(name, pos_index);
-            }else{
+            } else {
                 abort ENameAlreadyRecorded
             };
-        }else{
+        } else {
             abort EHousePluginNotAllowed
         }
     }
+
     // add house to registry
     public fun add_house_to_registry(
         registry: &mut HouseRegistry,
@@ -516,10 +504,8 @@ module monopoly::house_cell {
         };
     }
 
-    public fun empty_house_plugin(
-        _: &Game,
-    ): HousePluginInfo{
-        HousePluginInfo{
+    public fun empty_house_plugin(): HousePluginInfo {
+        HousePluginInfo {
             player_assets: vec_map::empty<address, VecSet<u8>>(),
             name_to_position: vec_map::empty<String, u8>(),
         }
@@ -575,9 +561,6 @@ module monopoly::house_cell {
         game: &mut Game,
         ctx: &mut TxContext,
     ) {
-        let player = request.action_request_player();
-        
-
         let BuyArgument<T> {
             type_name,
             player_balance: _,
@@ -588,18 +571,18 @@ module monopoly::house_cell {
         } = request.action_request_remove_parameters(game);
 
         assert!(type_name::get<T>() == type_name, EUnMatchedCoinType);
-
+        let (game_id, player, pos_index) = request.action_request_info();
         // validate price
         if (purchased && eligible) {
             // update player's balance
             let balance_manager = game.balance_mut<T>();
             balance_manager.sub_balance(
-                request.action_request_player(),
+                player,
                 house_price,
             );
 
             // update house owner & state
-            let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(&request);
+            let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(&request, pos_index);
             house_cell.level = std::u8::min(level + 1, house_cell.max_level());
 
             if (house_cell.owner.is_none()) {
@@ -610,7 +593,6 @@ module monopoly::house_cell {
             };
         };
 
-        let (game_id, player, pos_index) = request.action_request_info();
         let action_request_id = object::id(&request);
 
         let house_cell = game.borrow_cell<HouseCell>(pos_index);
@@ -628,10 +610,7 @@ module monopoly::house_cell {
         game.drop_action_request(request, ctx);
     }
 
-    public(package) fun update_toll_by_chance(
-        self: &mut HouseCell,
-        bps: u64,
-    ){  
+    public(package) fun update_toll_by_chance(self: &mut HouseCell, bps: u64) {
         let keys = self.house.tolls.keys();
         keys.do!(|key| {
             let toll = self.house.tolls.get_mut(&key);
@@ -639,37 +618,28 @@ module monopoly::house_cell {
         });
     }
 
-    public(package) fun level_up_by_chance(
-        self: &mut HouseCell,
-    ){
+    public(package) fun level_up_by_chance(self: &mut HouseCell) {
         let max_level = (self.house.tolls.keys().length() -1) as u8;
-        if (self.level < max_level){
+        if (self.level < max_level) {
             self.level = self.level + 1;
         };
-
     }
 
-    public(package) fun level_down_by_chance(
-        self: &mut HouseCell,
-    ){
-        if (self.level > 0){
+    public(package) fun level_down_by_chance(self: &mut HouseCell) {
+        if (self.level > 0) {
             self.level = self.level - 1;
         };
     }
-    public(package) fun level_to_zero(
-        self: &mut HouseCell,
-    ){
+
+    public(package) fun level_to_zero(self: &mut HouseCell) {
         self.level = 0;
     }
 
-    public(package) fun new_house_plugin(): HousePlugin{
-        HousePlugin{}
+    public(package) fun new_house_plugin(): HousePlugin {
+        HousePlugin {}
     }
 
-    public(package) fun assert_if_not_in_registry(
-        registry: &HouseRegistry,
-        name: String,
-    ){
+    public(package) fun assert_if_not_in_registry(registry: &HouseRegistry, name: String) {
         assert!(registry.contains_name(name), EHouseNotRegistered);
     }
 
