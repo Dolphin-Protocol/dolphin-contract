@@ -734,24 +734,21 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_balance_chance_info(idx_receipt);
-                action_request.initialize_balance_chance(&mut game, chance);
+                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_toll_chance_info(idx_receipt);
-                action_request.initialize_toll_chance(&mut game, chance);
+                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<Monopoly, JailChance>(
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_jail_chance_info(idx_receipt);
-                action_request.initialize_jail_chance(&mut game, chance);
+                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<
@@ -761,8 +758,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_house_chance_info(idx_receipt);
-                action_request.initialize_house_chance(&mut game, chance);
+                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else {
                 abort 2;
@@ -929,8 +925,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_balance_chance_info(idx_receipt);
-                action_request.initialize_balance_chance(&mut game, chance);
+                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
@@ -939,8 +934,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                 );
                 let house_cell = game.borrow_cell<HouseCell>(1);
                 assert!(house_cell.tolls().get(&1) == 15);
-                let chance = chance_registry.burn_receipt_and_get_toll_chance_info(idx_receipt);
-                action_request.initialize_toll_chance(&mut game, chance);
+                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
 
                 let house_cell = game.borrow_cell<HouseCell>(1);
@@ -950,8 +944,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_jail_chance_info(idx_receipt);
-                action_request.initialize_jail_chance(&mut game, chance);
+                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<
@@ -961,8 +954,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_house_chance_info(idx_receipt);
-                action_request.initialize_house_chance(&mut game, chance);
+                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else {
                 abort 2;
@@ -1014,24 +1006,21 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_balance_chance_info(idx_receipt);
-                action_request.initialize_balance_chance(&mut game, chance);
+                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_toll_chance_info(idx_receipt);
-                action_request.initialize_toll_chance(&mut game, chance);
+                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<Monopoly, JailChance>(
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_jail_chance_info(idx_receipt);
-                action_request.initialize_jail_chance(&mut game, chance);
+                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<
@@ -1041,8 +1030,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_house_chance_info(idx_receipt);
-                action_request.initialize_house_chance(&mut game, chance);
+                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else {
                 abort 2;
@@ -1097,24 +1085,21 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_balance_chance_info(idx_receipt);
-                action_request.initialize_balance_chance(&mut game, chance);
+                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_toll_chance_info(idx_receipt);
-                action_request.initialize_toll_chance(&mut game, chance);
+                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<Monopoly, JailChance>(
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_jail_chance_info(idx_receipt);
-                action_request.initialize_jail_chance(&mut game, chance);
+                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
                 let mut action_request = game.request_player_move_for_testing<
@@ -1124,8 +1109,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                     turn_cap,
                     ctx(s),
                 );
-                let chance = chance_registry.burn_receipt_and_get_house_chance_info(idx_receipt);
-                action_request.initialize_house_chance(&mut game, chance);
+                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
                 game.drop_action_request(action_request, ctx(s));
             } else {
                 abort 2;
