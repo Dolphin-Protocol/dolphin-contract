@@ -13,6 +13,10 @@ module monopoly::supply {
         balance::create_supply(Monopoly {})
     }
 
+    public fun burn_supply(_cap: &AdminCap): Supply<Monopoly> {
+        balance::create_supply(Monopoly {})
+    }
+
     public fun store_supply<T>(supply: Supply<T>, to: address, ctx: &mut TxContext) {
         let dolphin_supply = StoredSupply<T> { id: object::new(ctx), supply };
 
