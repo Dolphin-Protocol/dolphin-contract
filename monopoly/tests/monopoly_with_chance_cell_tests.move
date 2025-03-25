@@ -5,6 +5,7 @@ module monopoly::monopoly_with_chance_cell_tests {
         cell::{Self, Cell, DoNothingArgument},
         chance_cell::{
             Self,
+            ChanceArgument,
             ChanceCell,
             ChanceRegistry,
             BalanceChance,
@@ -721,49 +722,19 @@ module monopoly::monopoly_with_chance_cell_tests {
             let turn_cap = s.take_from_address<TurnCap>(object::id_address(&game));
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
-            let idx_receipt = chance_cell::pick_chance_num_testing(0);
+            let request = game.request_player_move_for_testing<Monopoly, ChanceArgument>(
+                turn_cap,
+                ctx(s),
+            );
+            let idx = 0;
+            chance_cell::initialize_chance_argument_for_testing(
+                request,
+                &mut game,
+                &chance_registry,
+                idx,
+                ctx(s),
+            );
 
-            let idx = idx_receipt.index();
-
-            if (idx < chance_registry.balance_chance_amt()) {
-                // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    BalanceChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, JailChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    HouseChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else {
-                abort 2;
-            };
-            assert!(idx == 0);
             assert!(
                 game.borrow_cell<HouseCell>(house_cell::house_position_of(&game, 3u64.to_string())  as u64).level() == 0,
             );
@@ -913,52 +884,19 @@ module monopoly::monopoly_with_chance_cell_tests {
             let admin_cap = s.take_from_sender<AdminCap>();
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
-            let idx_receipt = chance_cell::pick_chance_num_testing(9);
+            let request = game.request_player_move_for_testing<Monopoly, ChanceArgument>(
+                turn_cap,
+                ctx(s),
+            );
+            let idx = 9;
+            chance_cell::initialize_chance_argument_for_testing(
+                request,
+                &mut game,
+                &chance_registry,
+                idx,
+                ctx(s),
+            );
 
-            let idx = idx_receipt.index();
-            if (idx < chance_registry.balance_chance_amt()) {
-                // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    BalanceChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                let house_cell = game.borrow_cell<HouseCell>(1);
-                assert!(house_cell.tolls().get(&1) == 15);
-                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-
-                let house_cell = game.borrow_cell<HouseCell>(1);
-                assert!(house_cell.tolls().get(&1) == 15*2);
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, JailChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    HouseChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else {
-                abort 2;
-            };
             assert!(game.player_position_of(b) == 10);
             assert!(game.current_round() == 1);
             assert!(game.plays() == 5);
@@ -994,47 +932,18 @@ module monopoly::monopoly_with_chance_cell_tests {
             let admin_cap = s.take_from_sender<AdminCap>();
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
-            let idx_receipt = chance_registry.pick_chance_num(&game, &random, s.ctx());
-
-            let idx = idx_receipt.index();
-            if (idx < chance_registry.balance_chance_amt()) {
-                // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    BalanceChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, JailChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    HouseChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else {
-                abort 2;
-            };
+            let request = game.request_player_move_for_testing<Monopoly, ChanceArgument>(
+                turn_cap,
+                ctx(s),
+            );
+            let idx = 57;
+            chance_cell::initialize_chance_argument_for_testing(
+                request,
+                &mut game,
+                &chance_registry,
+                idx,
+                ctx(s),
+            );
             assert!(game.player_position_of(c) == 15);
             assert!(game.current_round() == 1);
             assert!(game.plays() == 6);
@@ -1073,47 +982,18 @@ module monopoly::monopoly_with_chance_cell_tests {
             let admin_cap = s.take_from_sender<AdminCap>();
             let chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
 
-            let idx_receipt = chance_registry.pick_chance_num(&game, &random, s.ctx());
-
-            let idx = idx_receipt.index();
-            if (idx < chance_registry.balance_chance_amt()) {
-                // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    BalanceChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_balance_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, TollChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_toll_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<Monopoly, JailChance>(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_jail_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else if (idx < chance_registry.balance_chance_amt() + chance_registry.toll_chance_amt() + chance_registry.jail_chance_amt() + chance_registry.house_chance_amt()) {
-                let mut action_request = game.request_player_move_for_testing<
-                    Monopoly,
-                    HouseChance,
-                >(
-                    turn_cap,
-                    ctx(s),
-                );
-                action_request.initialize_house_chance(&mut game, &chance_registry, idx_receipt);
-                game.drop_action_request(action_request, ctx(s));
-            } else {
-                abort 2;
-            };
+            let request = game.request_player_move_for_testing<Monopoly, ChanceArgument>(
+                turn_cap,
+                ctx(s),
+            );
+            let idx = 46;
+            chance_cell::initialize_chance_argument_for_testing(
+                request,
+                &mut game,
+                &chance_registry,
+                idx,
+                ctx(s),
+            );
 
             assert!(game.player_position_of(d) == 15);
             assert!(game.current_round() == 1);

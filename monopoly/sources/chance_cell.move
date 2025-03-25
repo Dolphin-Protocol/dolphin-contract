@@ -1,19 +1,15 @@
 module monopoly::chance_cell {
     use monopoly::{
         house_cell::{Self, HouseRegistry, HouseCell},
-        monopoly::{AdminCap, Game, ActionRequest, TurnCap},
+        monopoly::{AdminCap, Game, ActionRequest},
         supply::Monopoly
     };
-    use std::{
-        string::String,
-        type_name::{Self}
-    };
+    use std::string::String;
     use sui::{event, random::Random, vec_set::{Self, VecSet}};
 
+    public struct ChanceArgument has copy, drop, store {}
+
     // === Structs ===
-    public struct IndexReceipt {
-        idx: u8,
-    }
 
     public struct BalanceChance has copy, drop, store {
         description: String,
@@ -170,43 +166,62 @@ module monopoly::chance_cell {
         self.balance_chances_len + self.toll_chances_len + self.jail_chances_len + self.house_chances_len
     }
 
-    public fun index(receipt: &IndexReceipt): u8 {
-        receipt.idx
-    }
-
     public fun toll_chance_name(toll_chance: &TollChance): String { toll_chance.name }
 
     // === Admin Functions ===
+
     #[allow(lint(public_random))]
-    public fun pick_chance_and_execute<ChanceType: copy+ drop+  store>(
-        request: ActionRequest<ChanceType>,
+    public fun initialize_chance_argument(
+        request: ActionRequest<ChanceArgument>,
         game: &mut Game,
         registry: &ChanceRegistry,
         random: &Random,
         ctx: &mut TxContext,
-    ){
-        let idx_receipt = pick_chance_num(registry, game, random, ctx);
+    ) {
+        let total_amt =
+            registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt() + registry.house_chance_amt();
+        let mut generator = random.new_generator(ctx);
+        let idx = generator.generate_u8_in_range(0, total_amt);
 
-        let idx = idx_receipt.index();
-
-        if (idx < registry.balance_chance_amt()) {
-            // we've already known the moved_steps and corresponding action then, therefore we can config the PTB for requried generic parameters
-            request.initialize_balance_chance(game, registry, idx_receipt);
-            game.drop_action_request(request, ctx);
-        } else if (idx < registry.balance_chance_amt() + registry.toll_chance_amt()) {
-            request.initialize_toll_chance(game, registry, idx_receipt);
-            game.drop_action_request(request, ctx);
-        } else if (idx < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt()) {
-            request.initialize_jail_chance(game, registry, idx_receipt);
-            game.drop_action_request(request, ctx);
-        } else if (idx < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt() + registry.house_chance_amt()) {
-            request.initialize_house_chance(game, registry, idx_receipt);
-            game.drop_action_request(request, ctx);
-        } else {
-            abort EChanceTypeUndefined;
-        };
+        initialize_chance_argument_(request, game, registry, ctx, idx);
     }
 
+    #[test_only]
+    public fun initialize_chance_argument_for_testing(
+        request: ActionRequest<ChanceArgument>,
+        game: &mut Game,
+        registry: &ChanceRegistry,
+        idx: u8,
+        ctx: &mut TxContext,
+    ) {
+        initialize_chance_argument_(request, game, registry, ctx, idx);
+    }
+
+    fun initialize_chance_argument_(
+        mut request: ActionRequest<ChanceArgument>,
+        game: &mut Game,
+        registry: &ChanceRegistry,
+        ctx: &mut TxContext,
+        idx: u8,
+    ) {
+        if (idx < registry.balance_chance_amt()) {
+            // balance chance
+            request.initialize_balance_chance(game, registry, idx);
+        } else if (idx < registry.balance_chance_amt() + registry.toll_chance_amt()) {
+            // toll chance
+            request.initialize_toll_chance(game, registry, idx);
+        } else if (idx < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt()) {
+            // jail chance
+            request.initialize_jail_chance(game, registry, idx);
+        } else if (idx < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt() + registry.house_chance_amt()) {
+            // house chance
+            request.initialize_house_chance(game, registry, idx);
+        } else {
+            abort EChanceTypeUndefined
+        };
+
+        game.drop_action_request(request, ctx);
+    }
 
     public fun add_balance_chance_to_registry(
         registry: &mut ChanceRegistry,
@@ -271,32 +286,14 @@ module monopoly::chance_cell {
         }
     }
 
-    // pick a index to map chance registry
-    #[allow(lint(public_random))]
-    public fun pick_chance_num(
-        registry: &ChanceRegistry,
-        _: &Game,
-        rand: &Random,
-        ctx: &mut TxContext,
-    ): IndexReceipt {
-        let total_amt =
-            registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt() + registry.house_chance_amt();
-        let mut generator = rand.new_generator(ctx);
-        let pick_idx = generator.generate_u8_in_range(0, total_amt);
-        IndexReceipt {
-            idx: pick_idx,
-        }
-    }
-
     // handle balance chance to update user balance
-    public fun initialize_balance_chance<ChanceType: store + copy + drop>(
-        request: &mut ActionRequest<ChanceType>,
+    public fun initialize_balance_chance(
+        request: &mut ActionRequest<ChanceArgument>,
         game: &mut Game,
         registry: &ChanceRegistry,
-        receipt: IndexReceipt,
+        rand_num: u8,
     ) {
-        assert!(type_name::get<ChanceType>() == type_name::get<BalanceChance>());
-        let chance = burn_receipt_and_get_balance_chance_info(registry, receipt);
+        let chance = burn_receipt_and_get_balance_chance_info(registry, rand_num);
         let player = request.action_request_player();
         let (_, is_increase, amount) = chance.balance_chance_info();
 
@@ -333,7 +330,10 @@ module monopoly::chance_cell {
                     while (true) {
                         let house_position =
                             house_cell::player_asset_of(game, player).keys().length() - 1;
-                        let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(request, house_position as u64);
+                        let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(
+                            request,
+                            house_position as u64,
+                        );
                         let sell_price = house_cell.sell_price_for_level(house_cell.level());
                         asset_value = asset_value + sell_price;
 
@@ -351,7 +351,6 @@ module monopoly::chance_cell {
             };
         };
 
-        game.config_parameter(request, chance);
         request.settle_action_request();
 
         event::emit(BalanceChancePicked {
@@ -363,21 +362,21 @@ module monopoly::chance_cell {
         });
     }
 
-    public fun initialize_toll_chance<ChanceType: copy + store + drop>(
-        request: &mut ActionRequest<ChanceType>,
+    public fun initialize_toll_chance(
+        request: &mut ActionRequest<ChanceArgument>,
         game: &mut Game,
         registry: &ChanceRegistry,
-        receipt: IndexReceipt,
+        rand_num: u8,
     ) {
-        assert!(type_name::get<ChanceType>() == type_name::get<TollChance>());
-
-        let chance = burn_receipt_and_get_toll_chance_info(registry, receipt);
+        let chance = burn_receipt_and_get_toll_chance_info(registry, rand_num);
         let house_position = house_cell::house_position_of(game, chance.name);
-        let house_cell: &mut HouseCell= game.borrow_cell_mut_with_request(request, house_position as u64);
+        let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(
+            request,
+            house_position as u64,
+        );
 
         house_cell.update_toll_by_chance(chance.bps);
 
-        game.config_parameter(request, chance);
         request.settle_action_request();
 
         event::emit(TollChancePicked {
@@ -389,19 +388,16 @@ module monopoly::chance_cell {
         });
     }
 
-    public fun initialize_jail_chance<ChanceType: copy + store + drop>(
-        request: &mut ActionRequest<ChanceType>,
+    public fun initialize_jail_chance(
+        request: &mut ActionRequest<ChanceArgument>,
         game: &mut Game,
         registry: &ChanceRegistry,
-        receipt: IndexReceipt,
+        rand_num: u8,
     ) {
-        assert!(type_name::get<ChanceType>() == type_name::get<HouseChance>());
-
-        let chance = burn_receipt_and_get_jail_chance_info(registry, receipt);
+        let chance = burn_receipt_and_get_jail_chance_info(registry, rand_num);
         let player = request.action_request_player();
         game.add_to_skips(player, chance.round);
 
-        game.config_parameter<ChanceType>(request, chance);
         request.settle_action_request();
 
         event::emit(JailChancePicked {
@@ -412,21 +408,21 @@ module monopoly::chance_cell {
         });
     }
 
-    public fun initialize_house_chance<ChanceType: copy + store + drop>(
-        request: &mut ActionRequest<ChanceType>,
+    public fun initialize_house_chance(
+        request: &mut ActionRequest<ChanceArgument>,
         game: &mut Game,
         registry: &ChanceRegistry,
-        receipt: IndexReceipt,
+        rand_num: u8,
     ) {
-        assert!(type_name::get<ChanceType>() == type_name::get<HouseChance>());
-
-        let chance = burn_receipt_and_get_house_chance_info(registry, receipt);
-        game.config_parameter(request, chance);
+        let chance = burn_receipt_and_get_house_chance_info(registry, rand_num);
         request.settle_action_request();
 
         let house_position = house_cell::house_position_of(game, chance.name);
         {
-            let house_cell: &mut HouseCell= game.borrow_cell_mut_with_request(request, house_position as u64);
+            let house_cell: &mut HouseCell = game.borrow_cell_mut_with_request(
+                request,
+                house_position as u64,
+            );
 
             if (chance.is_level_up) {
                 house_cell.level_up_by_chance();
@@ -465,15 +461,11 @@ module monopoly::chance_cell {
     // it needs to be called after pick_chance_num function.
     fun burn_receipt_and_get_balance_chance_info(
         registry: &ChanceRegistry,
-        receipt: IndexReceipt,
+        rand_num: u8,
     ): BalanceChance {
-        let IndexReceipt {
-            idx: chance_idx,
-        } = receipt;
-
-        if (chance_idx < registry.balance_chance_amt()) {
+        if (rand_num < registry.balance_chance_amt()) {
             let keys = *registry.balance_chances.keys();
-            let idx = chance_idx % registry.balance_chance_amt();
+            let idx = rand_num % registry.balance_chance_amt();
             *keys.borrow(idx as u64)
         } else {
             abort EChanceTypeUndefined
@@ -481,17 +473,10 @@ module monopoly::chance_cell {
     }
 
     // it needs to be called after pick_chance_num function.
-    fun burn_receipt_and_get_toll_chance_info(
-        registry: &ChanceRegistry,
-        receipt: IndexReceipt,
-    ): TollChance {
-        let IndexReceipt {
-            idx: chance_idx,
-        } = receipt;
-
-        if (chance_idx < registry.balance_chance_amt() + registry.toll_chance_amt()) {
+    fun burn_receipt_and_get_toll_chance_info(registry: &ChanceRegistry, rand_num: u8): TollChance {
+        if (rand_num < registry.balance_chance_amt() + registry.toll_chance_amt()) {
             let keys = *registry.toll_chances.keys();
-            let idx = (chance_idx - registry.balance_chance_amt())% registry.toll_chance_amt();
+            let idx = (rand_num - registry.balance_chance_amt())% registry.toll_chance_amt();
             *keys.borrow(idx as u64)
         } else {
             abort EChanceTypeUndefined
@@ -499,20 +484,13 @@ module monopoly::chance_cell {
     }
 
     // it needs to be called after pick_chance_num function.
-    fun burn_receipt_and_get_jail_chance_info(
-        registry: &ChanceRegistry,
-        receipt: IndexReceipt,
-    ): JailChance {
-        let IndexReceipt {
-            idx: chance_idx,
-        } = receipt;
-
+    fun burn_receipt_and_get_jail_chance_info(registry: &ChanceRegistry, rand_num: u8): JailChance {
         if (
-            chance_idx < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt()
+            rand_num < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt()
         ) {
             let keys = *registry.jail_chances.keys();
             let idx =
-                (chance_idx - registry.balance_chance_amt() - registry.toll_chance_amt() )% registry.jail_chance_amt();
+                (rand_num - registry.balance_chance_amt() - registry.toll_chance_amt() )% registry.jail_chance_amt();
             *keys.borrow(idx as u64)
         } else {
             abort EChanceTypeUndefined
@@ -522,24 +500,19 @@ module monopoly::chance_cell {
     // it needs to be called after pick_chance_num function.
     fun burn_receipt_and_get_house_chance_info(
         registry: &ChanceRegistry,
-        receipt: IndexReceipt,
+        rand_num: u8,
     ): HouseChance {
-        let IndexReceipt {
-            idx: chance_idx,
-        } = receipt;
-
         if (
-            chance_idx < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt() + registry.house_chance_amt()
+            rand_num < registry.balance_chance_amt() + registry.toll_chance_amt() + registry.jail_chance_amt() + registry.house_chance_amt()
         ) {
             let keys = *registry.house_chances.keys();
             let idx =
-                (chance_idx - registry.balance_chance_amt() - registry.toll_chance_amt() - registry.jail_chance_amt())% registry.house_chance_amt();
+                (rand_num - registry.balance_chance_amt() - registry.toll_chance_amt() - registry.jail_chance_amt())% registry.house_chance_amt();
             *keys.borrow(idx as u64)
         } else {
             abort EChanceTypeUndefined
         }
     }
-
 
     fun new_balance_chance(description: String, is_increase: bool, amount: u64): BalanceChance {
         BalanceChance {
@@ -572,7 +545,7 @@ module monopoly::chance_cell {
         }
     }
 
-    fun calculate_total_asset_value_of(game: &Game, player: address): u64 {
+    public fun calculate_total_asset_value_of(game: &Game, player: address): u64 {
         let asset_idxs = (house_cell::player_asset_of(game, player)).into_keys();
         let mut player_asset_value = 0;
         asset_idxs.do!(|idx| {
@@ -591,12 +564,5 @@ module monopoly::chance_cell {
     #[test_only]
     public fun init_for_testing(ctx: &mut TxContext) {
         init(ctx);
-    }
-
-    #[test_only]
-    public fun pick_chance_num_testing(idx: u8): IndexReceipt {
-        IndexReceipt {
-            idx,
-        }
     }
 }
