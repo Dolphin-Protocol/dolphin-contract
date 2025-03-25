@@ -1,12 +1,16 @@
 module monopoly::cell {
+    use monopoly::monopoly::{Game, ActionRequest};
     use std::string::String;
 
     // === Errors ===
+    const ENotCell: u64 = 101;
 
     // === Constants ===
 
     // === Structs ===
 
+    /// Empty body in argument
+    public struct DoNothingArgument has copy, drop, store {}
     public struct Cell has key, store {
         id: UID,
         name: String,
@@ -21,7 +25,7 @@ module monopoly::cell {
     // === Public Functions ===
 
     // === View Functions ===
-
+    public fun name(self: &Cell): String { self.name }
     // === Admin Functions ===
 
     // === Package Functions ===
@@ -36,5 +40,27 @@ module monopoly::cell {
             id: object::new(ctx),
             name,
         }
+    }
+
+    public fun drop_cell(self: Cell) {
+        let Cell {
+            id,
+            name: _,
+        } = self;
+
+        object::delete(id);
+    }
+
+    public fun initialize_do_nothing_params(
+        action_request: &mut ActionRequest<DoNothingArgument>,
+        game: &Game,
+    ) {
+        // check if corresponding cell is normal Cell
+        assert!(
+            game.cell_contains_with_type<Cell>(action_request.action_request_pos_index()),
+            ENotCell,
+        );
+
+        action_request.settle_action_request();
     }
 }

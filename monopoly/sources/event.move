@@ -1,6 +1,5 @@
 module monopoly::event {
-    use std::type_name::TypeName;
-    use sui::{event, vec_map::VecMap};
+    use sui::event;
 
     public struct ActionRequestEvent<T: drop + copy> has copy, drop {
         game: ID,
