@@ -61,6 +61,7 @@ module monopoly::cell {
             ENotCell,
         );
 
+        // TODO: do we nned to emit DoNothing Events
         action_request.settle_action_request();
     }
 }

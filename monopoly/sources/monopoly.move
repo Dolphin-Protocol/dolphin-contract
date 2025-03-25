@@ -77,6 +77,7 @@ module monopoly::monopoly {
 
     public struct ActionRequest<P: copy + drop + store> has key {
         id: UID,
+        // TODO: assert gameId
         game: ID,
         player: address,
         pos_index: u64,
@@ -94,6 +95,7 @@ module monopoly::monopoly {
         turn_cap_id: ID,
     }
 
+    // TODO: remove; this is unused
     public struct ActionRequestEvent has copy, drop {
         game: ID,
         player: address,
@@ -486,6 +488,7 @@ module monopoly::monopoly {
         moved_steps
     }
 
+    // TODO: rename to execute, request should be used when sender is player
     // should called by external module to config the required parameters
     public fun request_player_move<T, P: drop + copy + store>(
         self: &mut Game,
@@ -507,6 +510,7 @@ module monopoly::monopoly {
         request_player_move_<T, P>(self, turn_cap, ctx)
     }
 
+    // TODO: how can we handle multiple assets?
     fun request_player_move_<T, P: copy + drop + store>(
         self: &mut Game,
         turn_cap: TurnCap,
@@ -637,6 +641,8 @@ module monopoly::monopoly {
                 max_steps: self.max_steps,
                 expired_at: 0,
             };
+
+            // TODO: TurnCap events
 
             transfer::transfer(turn_cap, next_player);
         };
