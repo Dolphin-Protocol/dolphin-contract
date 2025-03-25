@@ -2,7 +2,6 @@ module monopoly::house_cell {
     use monopoly::{monopoly::{Game, ActionRequest, AdminCap}, utils};
     use std::{string::String, type_name::{Self, TypeName}};
     use sui::{
-        dynamic_field as df,
         event,
         transfer::Receiving,
         vec_map::{Self, VecMap},
@@ -17,7 +16,6 @@ module monopoly::house_cell {
     const EHouseNotRegistered: u64 = 105;
     const EHousePluginNotAllowed: u64 = 106;
     const ENameAlreadyRecorded: u64 = 107;
-    const EHousePluginAlreadyExisted: u64 = 108;
 
     // === Constants ===
 
@@ -108,10 +106,11 @@ module monopoly::house_cell {
     // === View Functions ===
 
     public fun borrow_house_plugin_info(game: &Game): &HousePluginInfo {
-        df::borrow<HousePlugin, HousePluginInfo>(
-            game.borrow_uid<HousePlugin>(new_house_plugin()),
-            new_house_plugin(),
-        )
+        game.borrow_state(new_house_plugin())
+    }
+
+    public fun borrow_house_plugin_info_mut(game: &mut Game): &mut HousePluginInfo {
+        game.borrow_state_mut(new_house_plugin())
     }
 
     public fun borrow_player_assets(house_plugin: &HousePluginInfo): &VecMap<address, VecSet<u8>> {
@@ -252,32 +251,25 @@ module monopoly::house_cell {
     }
 
     public fun house_position_of(game: &Game, name: String): u8 {
-        let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(
-            game.borrow_uid<HousePlugin>(new_house_plugin()),
-            new_house_plugin(),
-        );
+        let house_plugin_info = borrow_house_plugin_info(game);
         let name_to_position = house_plugin_info.name_to_position;
         *name_to_position.get(&name)
     }
 
     public fun player_asset_of(game: &Game, player: address): VecSet<u8> {
-        if (df::exists_(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin())) {
-            let house_plugin_info = df::borrow<HousePlugin, HousePluginInfo>(
-                game.borrow_uid<HousePlugin>(new_house_plugin()),
-                new_house_plugin(),
-            );
-            if (house_plugin_info.player_assets.contains(&player)) {
-                let copy_asset = *house_plugin_info.player_assets.get(&player);
-                copy_asset
-            } else {
-                vec_set::empty<u8>()
-            }
+        assert!(!game.is_plugin_exists<HousePlugin>(), EHousePluginNotAllowed);
+
+        let house_plugin_info = borrow_house_plugin_info(game);
+        if (house_plugin_info.player_assets.contains(&player)) {
+            let copy_asset = *house_plugin_info.player_assets.get(&player);
+            copy_asset
         } else {
-            abort EHousePluginNotAllowed
+            vec_set::empty<u8>()
         }
     }
 
     // === Admin Functions ===
+    /// use AdminCap to check if game object is in creating process
     public fun initialize_states(game: &mut Game, cap: &AdminCap) {
         game.add_and_init_plugin(
             cap,
@@ -288,31 +280,34 @@ module monopoly::house_cell {
             },
         );
     }
+    
+    /// remove the HousePluginInfo fro game state and drop it
+    public fun remove_states(game: &mut Game){
+        let HousePluginInfo{
+            player_assets: _,
+            name_to_position: _
+        } = game.remove_plugin(HousePlugin{});
+    }
 
     public fun add_player_asset(game: &mut Game, player: address, pos_index: u8) {
-        if (df::exists_(game.borrow_uid(new_house_plugin()), new_house_plugin())) {
-            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(
-                game.borrow_uid_mut<HousePlugin>(new_house_plugin()),
-                new_house_plugin(),
-            );
-            let mut player_assets = house_plugin_info.player_assets;
-            if (!player_assets.contains(&player)) {
-                let pos_indexes = vec_set::singleton(pos_index);
-                player_assets.insert(player, pos_indexes);
-            } else {
-                let player_asset = player_assets.get_mut(&player);
-                player_asset.insert(pos_index);
-            };
+        assert!(!game.is_plugin_exists<HousePlugin>(), EHousePluginNotAllowed);
+
+        let house_plugin_info = borrow_house_plugin_info_mut(game);
+
+        let mut player_assets = house_plugin_info.player_assets;
+        if (!player_assets.contains(&player)) {
+            let pos_indexes = vec_set::singleton(pos_index);
+            player_assets.insert(player, pos_indexes);
         } else {
-            abort EHousePluginNotAllowed
-        }
+            let player_asset = player_assets.get_mut(&player);
+            player_asset.insert(pos_index);
+        };
     }
 
     public fun remove_player_asset(game: &mut Game, player: address) {
-        let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(
-            game.borrow_uid_mut<HousePlugin>(new_house_plugin()),
-            new_house_plugin(),
-        );
+        assert!(!game.is_plugin_exists<HousePlugin>(), EHousePluginNotAllowed);
+
+        let house_plugin_info = borrow_house_plugin_info_mut(game);
         let player_assets = house_plugin_info.borrow_player_assets_mut();
 
         let (_, player_asset) = player_assets.remove(&player);
@@ -357,20 +352,16 @@ module monopoly::house_cell {
     }
 
     public fun add_name_to_position(game: &mut Game, name: String, pos_index: u8) {
-        if (df::exists_(game.borrow_uid<HousePlugin>(new_house_plugin()), new_house_plugin())) {
-            let house_plugin_info = df::borrow_mut<HousePlugin, HousePluginInfo>(
-                game.borrow_uid_mut<HousePlugin>(new_house_plugin()),
-                new_house_plugin(),
-            );
-            let name_to_position = house_plugin_info.borrow_name_to_posito_mut();
-            if (!name_to_position.contains(&name)) {
-                name_to_position.insert(name, pos_index);
-            } else {
-                abort ENameAlreadyRecorded
-            };
+        assert!(game.is_plugin_exists<HousePlugin>(), EHousePluginNotAllowed);
+
+        let house_plugin_info = borrow_house_plugin_info_mut(game);
+
+        let name_to_position = house_plugin_info.borrow_name_to_posito_mut();
+        if (!name_to_position.contains(&name)) {
+            name_to_position.insert(name, pos_index);
         } else {
-            abort EHousePluginNotAllowed
-        }
+            abort ENameAlreadyRecorded
+        };
     }
 
     // add house to registry

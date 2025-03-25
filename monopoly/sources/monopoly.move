@@ -1,6 +1,6 @@
 module monopoly::monopoly {
     use monopoly::{balance_manager::{Self, BalanceManager}, event::emit_action_request};
-    use std::{string::String, type_name::{Self, TypeName}};
+    use std::type_name::{Self, TypeName};
     use sui::{
         bag::{Self, Bag},
         balance::{Balance, Supply},
@@ -30,9 +30,9 @@ module monopoly::monopoly {
     const EActionRequestParametersdNotConfig: u64 = 109;
     const EActionRequestAlreadyConfig: u64 = 110;
     const EGameStillOngoing: u64 = 111;
-    const ENotAuthorizedPlugin: u64 = 112;
-    const EPluginTypeNotAllowed: u64 = 113;
-    const EPluginAlreadyExisted: u64 = 114;
+    const EPluginAlreadyExisted: u64 = 112;
+    const EPluginExists: u64 = 113;
+
     // === Structs ===
 
     public struct AdminCap has key, store {
@@ -83,6 +83,8 @@ module monopoly::monopoly {
         parameters: Option<P>,
         settled: bool,
     }
+
+    public struct StateKey<phantom Plugin: drop> has copy, drop, store {}
 
     // === Events ===
     public struct PlayerMoveEvent has copy, drop {
@@ -238,6 +240,10 @@ module monopoly::monopoly {
         &self.skips
     }
 
+    public fun is_plugin_exists<Plugin: drop>(self: &Game): bool {
+        self.plugins.contains(&type_name::get<Plugin>())
+    }
+
     // === Mutable Functions ===
 
     public fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T> {
@@ -267,13 +273,9 @@ module monopoly::monopoly {
         self.borrow_cell_mut(pos_index)
     }
 
-    fun borrow_cell_mut<Cell: key + store>(
-        self: &mut Game,
-        pos_index: u64,
-    ): &mut Cell {
+    fun borrow_cell_mut<Cell: key + store>(self: &mut Game, pos_index: u64): &mut Cell {
         self.cells.borrow_mut(pos_index)
     }
-
 
     public fun action_request_parameters_mut<P: drop + copy + store>(
         req: &mut ActionRequest<P>,
@@ -413,31 +415,36 @@ module monopoly::monopoly {
         self.cells.remove(pos_index)
     }
 
-    public fun add_and_init_plugin<Plugin: store + copy + drop, V: store>(
+    public fun add_and_init_plugin<Plugin: drop, V: store>(
         self: &mut Game,
         _: &AdminCap,
-        key: Plugin,
+        _plugin: Plugin,
         value: V,
     ) {
         assert!(!self.plugins.contains(&type_name::get<Plugin>()), EPluginAlreadyExisted);
 
         self.plugins.insert(type_name::get<Plugin>());
-        df::add(&mut self.id, key, value);
+        df::add(&mut self.id, StateKey<Plugin> {}, value);
+    }
+
+    public fun remove_plugin<Plugin: drop, V: store>(self: &mut Game, _plugin: Plugin): V {
+        assert!(!self.is_gaming_ongoing(), EGameStillOngoing);
+
+        self.plugins.remove(&type_name::get<Plugin>());
+        df::remove(&mut self.id, StateKey<Plugin> {})
     }
 
     // === Package Functions ===
 
-    public fun borrow_uid_mut<PluginType: store + copy + drop>(
-        self: &mut Game,
-        _: PluginType,
-    ): &mut UID {
-        self.assert_plugin<PluginType>();
-        &mut self.id
+    public fun borrow_state<Plugin: drop, State: store>(self: &Game, _: Plugin): &State {
+        df::borrow(&self.id, StateKey<Plugin> {})
     }
 
-    public fun borrow_uid<PluginType: store + copy + drop>(self: &Game, _: PluginType): &UID {
-        self.assert_plugin<PluginType>();
-        &self.id
+    public fun borrow_state_mut<Plugin: drop, State: store>(
+        self: &mut Game,
+        _: Plugin,
+    ): &mut State {
+        df::borrow_mut(&mut self.id, StateKey<Plugin> {})
     }
 
     /// transfer TurnCap to game instance to determine the random number
@@ -668,7 +675,7 @@ module monopoly::monopoly {
         let Game {
             id,
             versions: _,
-            plugins: _,
+            plugins,
             max_round: _,
             max_steps: _,
             salary: _,
@@ -679,6 +686,8 @@ module monopoly::monopoly {
             plays: _,
             skips: _,
         } = self;
+
+        assert!(plugins.is_empty(), EPluginExists);
 
         balances.destroy_empty();
         cells.destroy_empty();
@@ -700,10 +709,6 @@ module monopoly::monopoly {
         } else {
             new_position
         }
-    }
-
-    fun assert_plugin<Plugin: copy + drop + store>(self: &Game) {
-        assert!(self.plugins.contains(&type_name::get<Plugin>()), ENotAuthorizedPlugin);
     }
 
     // === Test Functions ===
