@@ -1,8 +1,7 @@
 module monopoly::chance_cell {
     use monopoly::{
         house_cell::{Self, HouseRegistry, HouseCell},
-        monopoly::{AdminCap, Game, ActionRequest},
-        supply::Monopoly
+        monopoly::{AdminCap, Game, ActionRequest, Monopoly}
     };
     use std::string::String;
     use sui::{event, random::Random, vec_set::{Self, VecSet}};

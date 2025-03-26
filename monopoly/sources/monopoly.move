@@ -1,9 +1,12 @@
 module monopoly::monopoly {
-    use monopoly::{balance_manager::{Self, BalanceManager}, event::emit_action_request};
+    use monopoly::{
+        balance::{Self, Balance, Supply},
+        balance_manager::{Self, BalanceManager},
+        event::emit_action_request
+    };
     use std::type_name::{Self, TypeName};
     use sui::{
         bag::{Self, Bag},
-        balance::{Balance, Supply},
         dynamic_field as df,
         event,
         object_bag::{Self, ObjectBag},
@@ -34,6 +37,9 @@ module monopoly::monopoly {
     const EPluginExists: u64 = 113;
 
     // === Structs ===
+    
+    // Balance Type
+    public struct Monopoly has drop {}
 
     public struct AdminCap has key, store {
         id: UID,
@@ -349,6 +355,12 @@ module monopoly::monopoly {
         ctx: &mut TxContext,
     ): Game {
         new_(players, max_round, max_steps, salary, ctx)
+    }
+
+    public fun new_supply(
+        _cap: &AdminCap
+    ):Supply<Monopoly>{
+        balance::create_supply(Monopoly{})
     }
 
     public fun settle_game_creation(

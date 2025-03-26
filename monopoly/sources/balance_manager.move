@@ -1,5 +1,6 @@
 module monopoly::balance_manager {
-    use sui::{balance::{Self, Balance, Supply}, event, vec_map::{Self, VecMap}};
+    use monopoly::balance::{Self, Balance, Supply};
+    use sui::{event, vec_map::{Self, VecMap}};
 
     const ENotExistPlayer: u64 = 101;
 

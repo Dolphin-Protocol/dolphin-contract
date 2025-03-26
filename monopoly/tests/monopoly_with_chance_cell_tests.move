@@ -13,14 +13,13 @@ module monopoly::monopoly_with_chance_cell_tests {
             HouseChance,
             JailChance
         },
+        balance,
         house_cell::{Self, HouseCell, BuyArgument},
-        monopoly::{Self, AdminCap, Game, TurnCap, ActionRequest},
-        supply::{Self, Monopoly},
+        monopoly::{Self, AdminCap, Game, TurnCap, ActionRequest, Monopoly},
         test_utils
     };
     use std::{debug, string::{Self, String}, type_name};
     use sui::{
-        balance,
         clock::{Self, Clock},
         random::{Self, Random},
         test_scenario::{Self as test, Scenario, next_tx, ctx},
@@ -400,7 +399,7 @@ module monopoly::monopoly_with_chance_cell_tests {
 
             // 2) Balance setup
             {
-                let supply = supply::new_supply(&admin_cap);
+                let supply = monopoly::new_supply(&admin_cap);
                 game.setup_balance<Monopoly>(&admin_cap, supply, initial_fund, ctx(s));
             };
 
@@ -1906,7 +1905,7 @@ module monopoly::monopoly_with_chance_cell_tests {
 
             // remove_balance
             let (supply, balance_info) = game.remove_balance<Monopoly>();
-            supply::store_supply(supply, admin, ctx(s));
+            balance::destroy_supply(supply);
 
             // remove all the cells
             20u64.do!<u64>(|idx: u64| {
