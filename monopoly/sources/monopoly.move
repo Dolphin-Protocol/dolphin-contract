@@ -6,7 +6,6 @@ module monopoly::monopoly {
     };
     use std::type_name::{Self, TypeName};
     use sui::{
-        bag::{Self, Bag},
         dynamic_field as df,
         event,
         object_bag::{Self, ObjectBag},
@@ -25,9 +24,6 @@ module monopoly::monopoly {
     const ENotExistPlayer: u64 = 101;
     const EActionRequestNotSettled: u64 = 102;
     const EActionRequestAlreadySettled: u64 = 103;
-    const EGameShouldSupportAtLeastOneBalance: u64 = 104;
-    const EPlayerNotSetup: u64 = 105;
-    const EBalanceAlreadySetup: u64 = 106;
     const ENotPlayer: u64 = 107;
     const EStepsMightExceedOneCircuit: u64 = 108;
     const EActionRequestParametersdNotConfig: u64 = 109;
@@ -37,7 +33,7 @@ module monopoly::monopoly {
     const EPluginExists: u64 = 113;
 
     // === Structs ===
-    
+
     // Balance Type
     public struct Monopoly has drop {}
 
@@ -54,7 +50,7 @@ module monopoly::monopoly {
         salary: u64,
         // asset type records
         assets: VecSet<TypeName>,
-        balances: Bag,
+        balance_manager: BalanceManager<Monopoly>,
         /// players' positions and the order of player's turn
         player_position: VecMap<address, u64>,
         /// positions of cells in the map
@@ -135,16 +131,12 @@ module monopoly::monopoly {
         self.max_steps
     }
 
-    public fun balance<T>(self: &Game): &BalanceManager<T> {
-        &self.balances[type_name::get<T>()]
+    public fun balance(self: &Game): &BalanceManager<Monopoly> {
+        &self.balance_manager
     }
 
-    public fun balance_type_contains<T>(self: &Game): bool {
-        self.balances.contains(type_name::get<T>())
-    }
-
-    public fun player_balance<T>(self: &Game, player: address): &Balance<T> {
-        self.balance().balance_of(player)
+    public fun player_balance(self: &Game, player: address): &Balance<Monopoly> {
+        self.balance_manager.balance_of(player)
     }
 
     public fun players(self: &Game): vector<address> {
@@ -254,18 +246,18 @@ module monopoly::monopoly {
 
     // === Mutable Functions ===
 
-    public fun balance_mut<T>(self: &mut Game): &mut BalanceManager<T> {
-        &mut self.balances[type_name::get<T>()]
+    public fun balance_mut(self: &mut Game): &mut BalanceManager<Monopoly> {
+        &mut self.balance_manager
     }
 
-    fun player_balance_mut<T>(self: &mut Game, player: address): &mut Balance<T> {
+    fun player_balance_mut(self: &mut Game, player: address): &mut Balance<Monopoly> {
         self.balance_mut().balance_of_mut(player)
     }
 
-    public fun player_balance_mut_with_request<T, P: copy + drop + store>(
+    public fun player_balance_mut_with_request<P: copy + drop + store>(
         self: &mut Game,
         request: &ActionRequest<P>,
-    ): &mut Balance<T> {
+    ): &mut Balance<Monopoly> {
         self.player_balance_mut(request.player)
     }
 
@@ -352,15 +344,15 @@ module monopoly::monopoly {
         max_round: u64,
         max_steps: u8,
         salary: u64,
+        initial_funds: u64,
         ctx: &mut TxContext,
     ): Game {
-        new_(players, max_round, max_steps, salary, ctx)
+        let supply = balance::create_supply(Monopoly {});
+        new_(players, max_round, max_steps, salary, initial_funds, supply, ctx)
     }
 
-    public fun new_supply(
-        _cap: &AdminCap
-    ):Supply<Monopoly>{
-        balance::create_supply(Monopoly{})
+    public fun new_supply(_cap: &AdminCap): Supply<Monopoly> {
+        balance::create_supply(Monopoly {})
     }
 
     public fun settle_game_creation(
@@ -370,7 +362,6 @@ module monopoly::monopoly {
         ctx: &mut TxContext,
     ) {
         // validate balances setup
-        assert!(!self.balances.is_empty(), EGameShouldSupportAtLeastOneBalance);
         assert!(self.max_steps != 0 && self.num_of_cells() != 0, EInvalidGameSetup);
         assert!((self.max_steps as u64) < self.num_of_cells(), EStepsMightExceedOneCircuit);
 
@@ -387,32 +378,6 @@ module monopoly::monopoly {
         transfer::transfer(turn_cap, player);
 
         transfer::transfer(self, recipient);
-    }
-
-    /// add BalanceManager to balances and topup all the player's balances
-    public fun setup_balance<T>(
-        self: &mut Game,
-        _cap: &AdminCap,
-        supply: Supply<T>,
-        initial_funds: u64,
-        ctx: &mut TxContext,
-    ) {
-        assert!(!self.player_position.is_empty(), EPlayerNotSetup);
-        assert!(!self.balances.contains(type_name::get<T>()), EBalanceAlreadySetup);
-
-        self.balances.add(type_name::get<T>(), balance_manager::new(supply, ctx));
-
-        self.player_position.keys().do!(|player| {
-            self.balance_mut<T>().add_balance(player, initial_funds);
-        });
-    }
-
-    // close balance if game is finished
-    public fun remove_balance<T>(self: &mut Game): (Supply<T>, VecMap<address, u64>) {
-        assert!(!self.is_gaming_ongoing(), EGameStillOngoing);
-
-        let balance_manager: BalanceManager<T> = self.balances.remove(type_name::get<T>());
-        balance_manager.drop()
     }
 
     public fun add_cell<CellType: key + store>(
@@ -502,28 +467,28 @@ module monopoly::monopoly {
 
     // TODO: rename to execute, request should be used when sender is player
     // should called by external module to config the required parameters
-    public fun request_player_move<T, P: drop + copy + store>(
+    public fun request_player_move<P: drop + copy + store>(
         self: &mut Game,
         receiving_turn_cap: Receiving<TurnCap>,
         ctx: &mut TxContext,
     ): ActionRequest<P> {
         let turn_cap = transfer::receive(&mut self.id, receiving_turn_cap);
 
-        request_player_move_<T, P>(self, turn_cap, ctx)
+        request_player_move_<P>(self, turn_cap, ctx)
     }
 
     // since testing doesn't allow acquire Receiving object, we create additional interface for testing
     #[test_only]
-    public fun request_player_move_for_testing<T, P: copy + drop + store>(
+    public fun request_player_move_for_testing<P: copy + drop + store>(
         self: &mut Game,
         turn_cap: TurnCap,
         ctx: &mut TxContext,
     ): ActionRequest<P> {
-        request_player_move_<T, P>(self, turn_cap, ctx)
+        request_player_move_<P>(self, turn_cap, ctx)
     }
 
     // TODO: how can we handle multiple assets?
-    fun request_player_move_<T, P: copy + drop + store>(
+    fun request_player_move_<P: copy + drop + store>(
         self: &mut Game,
         turn_cap: TurnCap,
         ctx: &mut TxContext,
@@ -551,7 +516,7 @@ module monopoly::monopoly {
             && player_new_pos < prev_pos_idx
         ) {
             let salary = self.salary;
-            self.balance_mut<T>().add_balance(player, salary);
+            self.balance_mut().add_balance(player, salary);
         };
 
         ActionRequest {
@@ -666,6 +631,8 @@ module monopoly::monopoly {
         max_round: u64,
         max_steps: u8,
         salary: u64,
+        initial_funds: u64,
+        supply: Supply<Monopoly>,
         ctx: &mut TxContext,
     ): Game {
         let num_of_players = players.length();
@@ -673,15 +640,20 @@ module monopoly::monopoly {
         let mut values = vector<u64>[];
         std::u64::do!<()>(num_of_players, |_| values.push_back(0));
 
+        let mut balance_manager = balance_manager::new<Monopoly>(supply, ctx);
+        players.do!(|player| {
+            balance_manager.add_balance(player, initial_funds);
+        });
+
         Game {
             id: object::new(ctx),
             versions: vec_set::singleton(MODULE_VERSION),
             plugins: vec_set::empty(),
+            balance_manager,
             max_round,
             max_steps,
             salary,
             assets: vec_set::empty(),
-            balances: bag::new(ctx),
             player_position: vec_map::from_keys_values(players, values),
             cells: object_bag::new(ctx),
             plays: 0,
@@ -698,7 +670,7 @@ module monopoly::monopoly {
             max_steps: _,
             salary: _,
             assets: _,
-            balances,
+            balance_manager,
             cells,
             player_position: _,
             plays: _,
@@ -707,7 +679,8 @@ module monopoly::monopoly {
 
         assert!(plugins.is_empty(), EPluginExists);
 
-        balances.destroy_empty();
+        let (supply, _results) = balance_manager.drop();
+        supply.destroy_supply();
         cells.destroy_empty();
 
         object::delete(id);
@@ -738,7 +711,15 @@ module monopoly::monopoly {
         let player_b = @0xB;
         let player_c = @0xC;
 
-        let mut game = new_(vector[player_a, player_b, player_c], 12, 12, 100, &mut ctx);
+        let mut game = new_(
+            vector[player_a, player_b, player_c],
+            12,
+            12,
+            100,
+            2000,
+            balance::create_supply(Monopoly {}),
+            &mut ctx,
+        );
 
         std::u64::do!<()>(5, |_| game.roll_game());
 

@@ -1,11 +1,10 @@
 module monopoly::house_cell {
     use monopoly::{monopoly::{Game, ActionRequest, AdminCap}, utils};
-    use std::{string::String, type_name::{Self, TypeName}};
+    use std::string::String;
     use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};
 
     // === Errors ===
 
-    const EUnMatchedCoinType: u64 = 101;
     const ENoParameterBody: u64 = 103;
     const EPlayerNotHouseOwner: u64 = 104;
     const EHouseNotRegistered: u64 = 105;
@@ -50,8 +49,7 @@ module monopoly::house_cell {
     }
 
     // -- Arguments for settling response
-    public struct BuyArgument<phantom T> has copy, drop, store {
-        type_name: TypeName,
+    public struct BuyArgument has copy, drop, store {
         player_balance: u64,
         house_price: u64,
         level: u8,
@@ -148,9 +146,8 @@ module monopoly::house_cell {
         self.name
     }
 
-    public fun buy_argument_info<T>(buy_argument: &BuyArgument<T>): (TypeName, u64, u64, u8, bool) {
+    public fun buy_argument_info(buy_argument: &BuyArgument): (u64, u64, u8, bool) {
         (
-            buy_argument.type_name,
             buy_argument.player_balance,
             buy_argument.house_price,
             buy_argument.level,
@@ -201,19 +198,15 @@ module monopoly::house_cell {
         utils::max_of_u8(self.house.buy_prices.keys())
     }
 
-    public fun buy_argument_type_name<T>(buy_argument: &BuyArgument<T>): TypeName {
-        buy_argument.type_name
-    }
-
-    public fun buy_argument_player_balance<T>(buy_argument: &BuyArgument<T>): u64 {
+    public fun buy_argument_player_balance(buy_argument: &BuyArgument): u64 {
         buy_argument.player_balance
     }
 
-    public fun buy_argument_house_price<T>(buy_argument: &BuyArgument<T>): u64 {
+    public fun buy_argument_house_price(buy_argument: &BuyArgument): u64 {
         buy_argument.house_price
     }
 
-    public fun buy_argument_amount<T>(buy_argument: &BuyArgument<T>): bool {
+    public fun buy_argument_amount(buy_argument: &BuyArgument): bool {
         buy_argument.purchased
     }
 
@@ -399,8 +392,8 @@ module monopoly::house_cell {
     // === Package Functions ===
 
     // called after 'monopoly::request_player_move' to config the parameters
-    public fun initialize_buy_params<T>(
-        action_request: &mut ActionRequest<BuyArgument<T>>,
+    public fun initialize_buy_params(
+        action_request: &mut ActionRequest<BuyArgument>,
         game: &mut Game,
     ) {
         // Retrieve related objects and values in a single block
@@ -408,13 +401,11 @@ module monopoly::house_cell {
         let (owner, level, house_name, mut house_price, _, poll) = house_cell.house_cell_info();
 
         // Verify balance type and get player info
-        assert!(game.balance_type_contains<T>(), EUnMatchedCoinType);
         let player = action_request.action_request_player();
-        let player_balance = game.player_balance<T>(player).value();
+        let player_balance = game.player_balance(player).value();
 
         // Create parameters object
-        let mut parameters = BuyArgument<T> {
-            type_name: type_name::get<T>(),
+        let mut parameters = BuyArgument {
             player_balance,
             house_price: 0,
             level,
@@ -450,7 +441,7 @@ module monopoly::house_cell {
             } else {
                 // pay the poll
                 game
-                    .balance_mut<T>()
+                    .balance_mut()
                     .saturating_transfer(
                         player,
                         owner,
@@ -480,19 +471,15 @@ module monopoly::house_cell {
     }
 
     // user execute buy or upgrade the house
-    public fun execute_buy<T>(
-        mut request: ActionRequest<BuyArgument<T>>,
+    public fun execute_buy(
+        mut request: ActionRequest<BuyArgument>,
         purchased: bool,
         ctx: &TxContext,
     ) {
         // validate balance
-        let type_name = type_name::get<T>();
-
         assert!(request.action_request_parameters().is_some(), ENoParameterBody);
 
         let parameters = request.action_request_parameters_mut().borrow_mut();
-
-        assert!(parameters.type_name == type_name, EUnMatchedCoinType);
 
         // fill the required parameters
         parameters.purchased = purchased;
@@ -505,8 +492,8 @@ module monopoly::house_cell {
     }
 
     /// executed by server to settle the game state
-    public fun settle_buy<T>(
-        received_request: Receiving<ActionRequest<BuyArgument<T>>>,
+    public fun settle_buy(
+        received_request: Receiving<ActionRequest<BuyArgument>>,
         game: &mut Game,
         ctx: &mut TxContext,
     ) {
@@ -516,21 +503,16 @@ module monopoly::house_cell {
 
     // test_only as we can't acquire Receiving object in test
     #[test_only]
-    public fun settle_buy_for_testing<T>(
-        request: ActionRequest<BuyArgument<T>>,
+    public fun settle_buy_for_testing(
+        request: ActionRequest<BuyArgument>,
         game: &mut Game,
         ctx: &mut TxContext,
     ) {
         settle_buy_(request, game, ctx);
     }
 
-    fun settle_buy_<T>(
-        mut request: ActionRequest<BuyArgument<T>>,
-        game: &mut Game,
-        ctx: &mut TxContext,
-    ) {
-        let BuyArgument<T> {
-            type_name,
+    fun settle_buy_(mut request: ActionRequest<BuyArgument>, game: &mut Game, ctx: &mut TxContext) {
+        let BuyArgument {
             player_balance: _,
             house_price,
             level,
@@ -538,12 +520,11 @@ module monopoly::house_cell {
             purchased,
         } = request.action_request_remove_parameters(game);
 
-        assert!(type_name::get<T>() == type_name, EUnMatchedCoinType);
         let (game_id, player, pos_index) = request.action_request_info();
         // validate price
         if (purchased && eligible) {
             // update player's balance
-            let balance_manager = game.balance_mut<T>();
+            let balance_manager = game.balance_mut();
             balance_manager.sub_balance(
                 player,
                 house_price,

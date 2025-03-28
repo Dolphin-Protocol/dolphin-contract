@@ -1,7 +1,7 @@
 module monopoly::chance_cell {
     use monopoly::{
         house_cell::{Self, HouseRegistry, HouseCell},
-        monopoly::{AdminCap, Game, ActionRequest, Monopoly}
+        monopoly::{AdminCap, Game, ActionRequest}
     };
     use std::string::String;
     use sui::{event, random::Random, vec_set::{Self, VecSet}};
@@ -297,13 +297,13 @@ module monopoly::chance_cell {
         let (_, is_increase, amount) = chance.balance_chance_info();
 
         if (is_increase) {
-            let balance_manager = game.balance_mut<Monopoly>();
+            let balance_manager = game.balance_mut();
             let _ = balance_manager.add_balance(player, amount);
         } else {
-            let player_value = game.player_balance<Monopoly>(player).value();
+            let player_value = game.player_balance(player).value();
             // check if the player has enough value
             if (player_value >= chance.amount) {
-                let balance_manager = game.balance_mut<Monopoly>();
+                let balance_manager = game.balance_mut();
                 let _ = balance_manager.sub_balance(player, amount);
             } else {
                 let player_asset_value = calculate_total_asset_value_of(game, player);
@@ -311,7 +311,7 @@ module monopoly::chance_cell {
                 // calculate the player's total va
                 if (player_total_value < chance.amount) {
                     // the player is bankrupt
-                    let balance_manager = game.balance_mut<Monopoly>();
+                    let balance_manager = game.balance_mut();
                     balance_manager.saturating_sub_balance(player, chance.amount);
 
                     if (house_cell::player_asset_of(game, player).size() > 0) {
@@ -340,7 +340,7 @@ module monopoly::chance_cell {
 
                         let current_value = player_value + asset_value;
                         if (current_value >= chance.amount) {
-                            let balance_manager = game.balance_mut<Monopoly>();
+                            let balance_manager = game.balance_mut();
                             let sub_value = player_value + chance.amount - current_value;
                             balance_manager.sub_balance(player, sub_value);
                             break
