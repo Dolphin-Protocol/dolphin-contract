@@ -170,6 +170,18 @@ module monopoly::monopoly {
         self.borrow_cell(request.pos_index)
     }
 
+    public fun borrow_player_position_mut(
+        self: &mut Game,
+    ): &mut VecMap<address, u64>{
+        &mut self.player_position
+    }
+
+    public fun borrow_player_position(
+        self: &mut Game,
+    ): &VecMap<address, u64>{
+        &self.player_position
+    }
+
     public fun num_of_cells(self: &Game): u64 {
         self.cells.length()
     }

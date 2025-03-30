@@ -396,6 +396,8 @@ module monopoly::chance_cell {
         let chance = burn_receipt_and_get_jail_chance_info(registry, rand_num);
         let player = request.action_request_player();
         game.add_to_skips(player, chance.round);
+        let player_position = game.borrow_player_position_mut();
+        *player_position.get_mut(&player) = 5;
 
         request.settle_action_request();
 
