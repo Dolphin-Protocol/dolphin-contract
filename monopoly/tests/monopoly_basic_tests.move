@@ -1665,7 +1665,8 @@ module monopoly::monopoly_basic_tests {
                 };
             });
 
-            game.drop();
+            let winners = game.drop();
+            assert!(winners == vector[e]);
         };
 
         scenario.end();

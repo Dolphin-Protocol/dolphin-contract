@@ -53,7 +53,7 @@ module monopoly::chance_cell {
     }
 
     // === Events ===
-    public struct BalanceChancePicked has copy, drop {
+    public struct BalanceChancePickedEvent has copy, drop {
         game: ID,
         player: address,
         description: String,
@@ -61,7 +61,7 @@ module monopoly::chance_cell {
         amount: u64,
     }
 
-    public struct TollChancePicked has copy, drop {
+    public struct TollChancePickedEvent has copy, drop {
         game: ID,
         player: address,
         description: String,
@@ -69,14 +69,14 @@ module monopoly::chance_cell {
         bps: u64,
     }
 
-    public struct JailChancePicked has copy, drop {
+    public struct JailChancePickedEvent has copy, drop {
         game: ID,
         player: address,
         description: String,
         round: u8,
     }
 
-    public struct HouseChancePicked has copy, drop {
+    public struct HouseChancePickedEvent has copy, drop {
         game: ID,
         player: address,
         description: String,
@@ -352,7 +352,7 @@ module monopoly::chance_cell {
 
         request.settle_action_request();
 
-        event::emit(BalanceChancePicked {
+        event::emit(BalanceChancePickedEvent {
             game: object::id(game),
             player: player,
             description: chance.description,
@@ -378,7 +378,7 @@ module monopoly::chance_cell {
 
         request.settle_action_request();
 
-        event::emit(TollChancePicked {
+        event::emit(TollChancePickedEvent {
             game: object::id(game),
             player: request.action_request_player(),
             description: chance.description,
@@ -399,7 +399,7 @@ module monopoly::chance_cell {
 
         request.settle_action_request();
 
-        event::emit(JailChancePicked {
+        event::emit(JailChancePickedEvent {
             game: object::id(game),
             player: request.action_request_player(),
             description: chance.description,
@@ -432,7 +432,7 @@ module monopoly::chance_cell {
 
         let house_cell = game.borrow_cell<HouseCell>(house_position as u64);
 
-        event::emit(HouseChancePicked {
+        event::emit(HouseChancePickedEvent {
             game: object::id(game),
             player: request.action_request_player(),
             description: chance.description,

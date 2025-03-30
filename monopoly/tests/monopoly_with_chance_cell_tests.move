@@ -1860,7 +1860,7 @@ module monopoly::monopoly_with_chance_cell_tests {
                 };
             });
 
-            // remove all states
+            // remove plugins
             house_cell::remove_states(&mut game);
 
             game.drop();

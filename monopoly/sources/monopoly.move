@@ -24,6 +24,7 @@ module monopoly::monopoly {
     const ENotExistPlayer: u64 = 101;
     const EActionRequestNotSettled: u64 = 102;
     const EActionRequestAlreadySettled: u64 = 103;
+    const EInvalidNumOfCells: u64 = 104;
     const ENotPlayer: u64 = 107;
     const EStepsMightExceedOneCircuit: u64 = 108;
     const EActionRequestParametersdNotConfig: u64 = 109;
@@ -90,18 +91,27 @@ module monopoly::monopoly {
     public struct StateKey<phantom Plugin: drop> has copy, drop, store {}
 
     // === Events ===
-    public struct PlayerMoveEvent has copy, drop {
+    public struct GameCreatedEvent has copy, drop {
+        game: ID,
+        players: vector<address>,
+    }
+
+    public struct RollDiceEvent has copy, drop {
         game: ID,
         player: address,
-        moved_steps: u8,
+        dice_num: u8,
         turn_cap_id: ID,
     }
 
-    // TODO: remove; this is unused
-    public struct ActionRequestEvent has copy, drop {
+    public struct GameClosedEvent has copy, drop {
+        game: ID,
+        winners: vector<address>,
+    }
+
+    public struct ChangeTurnEvent has copy, drop {
         game: ID,
         player: address,
-        new_pos_idx: u64,
+        turn_cap: ID,
     }
 
     // === Method Aliases ===
@@ -168,6 +178,10 @@ module monopoly::monopoly {
         request: &ActionRequest<P>,
     ): &Cell {
         self.borrow_cell(request.pos_index)
+    }
+
+    public fun borrow_state<Plugin: drop, State: store>(self: &Game, _: Plugin): &State {
+        df::borrow(&self.id, StateKey<Plugin> {})
     }
 
     public fun num_of_cells(self: &Game): u64 {
@@ -244,6 +258,33 @@ module monopoly::monopoly {
         self.plugins.contains(&type_name::get<Plugin>())
     }
 
+    public fun winner(results: VecMap<address, u64>): vector<address> {
+        let size = results.size();
+        // Return empty vector if the map is empty
+        if (size == 0) {
+            return vector::empty<address>()
+        };
+
+        // Initialize max value to minimum possible u64 value
+        let mut max_value = 0u64;
+        let mut winners = vector::empty<address>();
+
+        size.do!<()>(|i| {
+            let (addr, value) = vec_map::get_entry_by_idx(&results, i);
+
+            if (*value > max_value) {
+                // Found a new maximum, clear previous winners and add this one
+                max_value = *value;
+                winners = vector::singleton<address>(*addr);
+            } else if (value == max_value) {
+                // Found another address with the same maximum value
+                vector::push_back(&mut winners, *addr);
+            };
+        });
+
+        winners
+    }
+
     // === Mutable Functions ===
 
     public fun balance_mut(self: &mut Game): &mut BalanceManager<Monopoly> {
@@ -298,11 +339,14 @@ module monopoly::monopoly {
         df::add(&mut req.id, state_key, state);
     }
 
-    public fun go_to_jail(
+    public fun borrow_state_mut<Plugin: drop, State: store>(
         self: &mut Game,
-        player: address,
-        round: u8,
-    ){
+        _: Plugin,
+    ): &mut State {
+        df::borrow_mut(&mut self.id, StateKey<Plugin> {})
+    }
+
+    public fun go_to_jail(self: &mut Game, player: address, round: u8) {
         self.add_to_skips(player, round);
         let jail_index = self.cells.length() / 4;
         *self.player_position.get_mut(&player) = jail_index;
@@ -371,9 +415,9 @@ module monopoly::monopoly {
         recipient: address,
         ctx: &mut TxContext,
     ) {
-        // validate balances setup
         assert!(self.max_steps != 0 && self.num_of_cells() != 0, EInvalidGameSetup);
         assert!((self.max_steps as u64) < self.num_of_cells(), EStepsMightExceedOneCircuit);
+        assert!(!self.cells.is_empty() && self.cells.length() % 4 == 0, EInvalidNumOfCells);
 
         let player = self.players()[0];
         // transfer TurnCap to first player
@@ -385,8 +429,16 @@ module monopoly::monopoly {
             max_steps: self.max_steps,
             expired_at: 0,
         };
-        transfer::transfer(turn_cap, player);
 
+        let game = object::id(&self);
+        event::emit(ChangeTurnEvent {
+            game,
+            player,
+            turn_cap: object::id(&turn_cap),
+        });
+
+        event::emit(GameCreatedEvent { game, players: self.players() });
+        transfer::transfer(turn_cap, player);
         transfer::transfer(self, recipient);
     }
 
@@ -423,51 +475,33 @@ module monopoly::monopoly {
         df::remove(&mut self.id, StateKey<Plugin> {})
     }
 
-    // === Package Functions ===
-
-    public fun borrow_state<Plugin: drop, State: store>(self: &Game, _: Plugin): &State {
-        df::borrow(&self.id, StateKey<Plugin> {})
-    }
-
-    public fun borrow_state_mut<Plugin: drop, State: store>(
-        self: &mut Game,
-        _: Plugin,
-    ): &mut State {
-        df::borrow_mut(&mut self.id, StateKey<Plugin> {})
-    }
+    // === Public Functions ===
 
     /// transfer TurnCap to game instance to determine the random number
     entry fun player_move(mut turn_cap: TurnCap, random: &Random, ctx: &mut TxContext): u8 {
         let mut generator = random::new_generator(random, ctx);
-        let moved_steps = random::generate_u8_in_range(&mut generator, 1, turn_cap.max_steps);
+        let dice_num = random::generate_u8_in_range(&mut generator, 1, turn_cap.max_steps);
 
-        turn_cap.moved_steps = moved_steps;
+        turn_cap.moved_steps = dice_num;
 
         // emit the new position event
-        event::emit(PlayerMoveEvent {
+        event::emit(RollDiceEvent {
             game: turn_cap.game,
             player: turn_cap.player,
-            moved_steps,
+            dice_num,
             turn_cap_id: object::id(&turn_cap),
         });
         // transfer to game object
         let game_address = turn_cap.game.to_address();
         transfer::transfer(turn_cap, game_address);
 
-        moved_steps
+        dice_num
     }
 
     #[test_only]
     entry fun player_move_for_testing(mut turn_cap: TurnCap, moved_steps: u8): u8 {
         turn_cap.moved_steps = moved_steps;
 
-        // emit the new position event
-        event::emit(PlayerMoveEvent {
-            game: turn_cap.game,
-            player: turn_cap.player,
-            moved_steps,
-            turn_cap_id: object::id(&turn_cap),
-        });
         // transfer to game object
         let game_address = turn_cap.game.to_address();
         transfer::transfer(turn_cap, game_address);
@@ -629,7 +663,11 @@ module monopoly::monopoly {
                 expired_at: 0,
             };
 
-            // TODO: TurnCap events
+            event::emit(ChangeTurnEvent {
+                game,
+                player,
+                turn_cap: object::id(&turn_cap),
+            });
 
             transfer::transfer(turn_cap, next_player);
         };
@@ -671,7 +709,8 @@ module monopoly::monopoly {
         }
     }
 
-    public fun drop(self: Game) {
+    // TODO: should return object wrapping game result to handle rewards distributions & game record
+    public fun drop(self: Game): vector<address> {
         let Game {
             id,
             versions: _,
@@ -689,11 +728,18 @@ module monopoly::monopoly {
 
         assert!(plugins.is_empty(), EPluginExists);
 
-        let (supply, _results) = balance_manager.drop();
+        let (supply, results) = balance_manager.drop();
         supply.destroy_supply();
         cells.destroy_empty();
 
+        let game_id = id.to_inner();
         object::delete(id);
+
+        let winners = winner(results);
+
+        event::emit(GameClosedEvent { game: game_id, winners });
+
+        winners
     }
 
     fun roll_game(self: &mut Game) {

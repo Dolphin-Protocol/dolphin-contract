@@ -4,7 +4,7 @@ module monopoly::house_cell {
     use sui::{event, transfer::Receiving, vec_map::{Self, VecMap}, vec_set::{Self, VecSet}};
 
     // === Errors ===
-
+    
     const ENoParameterBody: u64 = 103;
     const EPlayerNotHouseOwner: u64 = 104;
     const EHouseNotRegistered: u64 = 105;
@@ -68,9 +68,10 @@ module monopoly::house_cell {
         house_name: String,
         level: u8,
         purchased: bool,
+        paid_amount: u64
     }
 
-    public struct PayHousePollEvent has copy, drop {
+    public struct PayHouseTollEvent has copy, drop {
         game: ID,
         action_request: ID,
         player: address,
@@ -78,6 +79,7 @@ module monopoly::house_cell {
         house_name: String,
         level: u8,
         payee: address,
+        paid_amount: u64
     }
 
     // === Method Aliases ===
@@ -450,7 +452,7 @@ module monopoly::house_cell {
                 let (game_id, player, pos_index) = action_request.action_request_info();
                 action_request.settle_action_request();
 
-                event::emit(PayHousePollEvent {
+                event::emit(PayHouseTollEvent {
                     game: game_id,
                     action_request: object::id(action_request),
                     player,
@@ -458,6 +460,7 @@ module monopoly::house_cell {
                     house_name,
                     level,
                     payee: owner,
+                    paid_amount: poll
                 })
             };
         };
@@ -553,6 +556,7 @@ module monopoly::house_cell {
             house_name: house_cell.name,
             level: house_cell.level,
             purchased,
+            paid_amount: house_price
         });
 
         // consume ActionRequest and transfer new TurnCap to next player
