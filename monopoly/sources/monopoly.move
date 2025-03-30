@@ -170,18 +170,6 @@ module monopoly::monopoly {
         self.borrow_cell(request.pos_index)
     }
 
-    public fun borrow_player_position_mut(
-        self: &mut Game,
-    ): &mut VecMap<address, u64>{
-        &mut self.player_position
-    }
-
-    public fun borrow_player_position(
-        self: &mut Game,
-    ): &VecMap<address, u64>{
-        &self.player_position
-    }
-
     public fun num_of_cells(self: &Game): u64 {
         self.cells.length()
     }
@@ -308,6 +296,16 @@ module monopoly::monopoly {
         state: V,
     ) {
         df::add(&mut req.id, state_key, state);
+    }
+
+    public fun go_to_jail(
+        self: &mut Game,
+        player: address,
+        round: u8,
+    ){
+        self.add_to_skips(player, round);
+        let jail_index = self.cells.length() / 4;
+        *self.player_position.get_mut(&player) = jail_index;
     }
 
     public fun action_request_remove_state<
