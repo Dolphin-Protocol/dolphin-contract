@@ -36,10 +36,6 @@ module monopoly::chance_cell {
     public struct ChanceCell has key, store {
         id: UID,
         name: String,
-        balance_chances_len: u8,
-        toll_chances_len: u8,
-        jail_chances_len: u8,
-        house_chances_len: u8,
     }
 
     public struct ChanceRegistry has key {
@@ -161,10 +157,6 @@ module monopoly::chance_cell {
         registry.house_chances.size() as u8
     }
 
-    public fun total_chance_amt(self: &ChanceCell): u8 {
-        self.balance_chances_len + self.toll_chances_len + self.jail_chances_len + self.house_chances_len
-    }
-
     public fun toll_chance_name(toll_chance: &TollChance): String { toll_chance.name }
 
     // === Admin Functions ===
@@ -233,6 +225,8 @@ module monopoly::chance_cell {
         registry.balance_chances.insert(balance_chance);
     }
 
+    // TODO: update chance_cell info functions
+
     public fun add_toll_chance_to_registry(
         registry: &mut ChanceRegistry,
         _: &AdminCap,
@@ -269,19 +263,14 @@ module monopoly::chance_cell {
         registry.house_chances.insert(house_chance);
     }
 
+
     public fun new_chance_cell(
-        registry: &ChanceRegistry,
-        _: &AdminCap,
         name: String,
         ctx: &mut TxContext,
     ): ChanceCell {
         ChanceCell {
             id: object::new(ctx),
             name,
-            balance_chances_len: registry.balance_chances().size() as u8,
-            toll_chances_len: registry.toll_chances().size() as u8,
-            jail_chances_len: registry.jail_chances().size() as u8,
-            house_chances_len: registry.house_chances().size() as u8,
         }
     }
 
@@ -446,10 +435,6 @@ module monopoly::chance_cell {
         let ChanceCell {
             id,
             name: _,
-            balance_chances_len: _,
-            toll_chances_len: _,
-            jail_chances_len: _,
-            house_chances_len: _,
         } = self;
 
         object::delete(id);

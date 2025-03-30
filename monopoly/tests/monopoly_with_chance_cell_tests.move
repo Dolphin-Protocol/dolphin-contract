@@ -375,8 +375,6 @@ module monopoly::monopoly_with_chance_cell_tests {
                         game.add_cell(&admin_cap, idx, cell);
                     } else if (idx == 10 || idx == 15) {
                         let cell = chance_cell::new_chance_cell(
-                            &chance_registry,
-                            &admin_cap,
                             name,
                             s.ctx(),
                         );
