@@ -1,7 +1,8 @@
 [package]
 name = "Monopoly"
 edition = "2024.alpha" # edition = "legacy" to use legacy (pre-2024) Move
-published-at = "0xec7627b98bf9bb171f28e089546f007f76e9f7aedacddf8d93e89ea75f8cb721"
+# published-at = "0xec7627b98bf9bb171f28e089546f007f76e9f7aedacddf8d93e89ea75f8cb721"
+published-at = "0x827549ecf9fa8f3a08c331babbd0fca2236a20f8719cb0199fe229947d257043"
 # license = ""           # e.g., "MIT", "GPL", "Apache 2.0"
 # authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
 

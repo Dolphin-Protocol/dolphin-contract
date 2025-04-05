@@ -305,7 +305,7 @@ module monopoly::chance_cell {
 
                     if (house_cell::player_asset_of(game, player).size() > 0) {
                         //remove  all assets
-                        house_cell::player_asset_of(game, player).size().do!<u64>(|_| {
+                        house_cell::player_asset_of(game, player).size().do!<()>(|_| {
                             house_cell::remove_player_asset(game, player);
                         });
                     };

@@ -304,11 +304,12 @@ module monopoly::monopoly_with_chance_cell_tests {
                     };
                 });
 
-                //set up chance registry
+                // set up chance registry
                 let mut chance_registry = s.take_shared<chance_cell::ChanceRegistry>();
                 let descriptions = descriptions();
                 house_idx = 0;
                 descriptions.length().do!<u64>(|idx: u64| {
+                    // TODO: wrong testing
                     if (idx < 4) {
                         // balance chance (increase)
                         chance_cell::add_balance_chance_to_registry(

@@ -59,6 +59,14 @@ module monopoly::house_cell {
 
     // === Events ===
 
+    public struct PlayerBuyOrUpgradeHouseEvent has copy, drop {
+        game: ID,
+        action_request: ID,
+        player: address,
+        pos_index: u64,
+        purchased: bool,
+    }
+
     /// Emit when server resolve buy or upgrade events
     public struct BuyOrUpgradeHouseEvent has copy, drop {
         game: ID,
@@ -326,6 +334,7 @@ module monopoly::house_cell {
         } = house;
     }
 
+    // TODO: refactor
     public fun add_name_to_position(game: &mut Game, name: String, pos_index: u8) {
         assert!(game.is_plugin_exists<HousePlugin>(), EHousePluginNotAllowed);
 
@@ -486,6 +495,16 @@ module monopoly::house_cell {
 
         // fill the required parameters
         parameters.purchased = purchased;
+
+        // emit the events
+        let (game_id, player, pos_index) = request.action_request_info();
+        event::emit(PlayerBuyOrUpgradeHouseEvent {
+            game: game_id,
+            action_request: object::id(&request),
+            player,
+            pos_index,
+            purchased,
+        });
 
         // mark settled in action_request to promise the action is ready to be sent
         request.settle_action_request();
