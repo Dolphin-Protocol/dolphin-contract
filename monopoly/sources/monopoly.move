@@ -665,7 +665,7 @@ module monopoly::monopoly {
 
             event::emit(ChangeTurnEvent {
                 game,
-                player,
+                player: next_player,
                 turn_cap: object::id(&turn_cap),
             });
 
