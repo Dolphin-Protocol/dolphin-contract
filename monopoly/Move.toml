@@ -1,7 +1,9 @@
 [package]
 name = "Monopoly"
 edition = "2024.alpha" # edition = "legacy" to use legacy (pre-2024) Move
-published-at= "0x50172b8deb27d150d6ca9f41d33889e00ab66cce6a43acf7bf19363a1426dc95"
+# published-at = "0xec7627b98bf9bb171f28e089546f007f76e9f7aedacddf8d93e89ea75f8cb721"
+# published-at = "0x827549ecf9fa8f3a08c331babbd0fca2236a20f8719cb0199fe229947d257043"
+published-at = "0x347d3e9709dd3ea3fc5aaa2c751bb379d173d6d2b49097fb109c3266893a593c"
 # license = ""           # e.g., "MIT", "GPL", "Apache 2.0"
 # authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
 
@@ -20,7 +22,7 @@ Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-fram
 # Override = { local = "../conflicting/version", override = true }
 
 [addresses]
-monopoly = "0x50172b8deb27d150d6ca9f41d33889e00ab66cce6a43acf7bf19363a1426dc95"
+monopoly = "0x00"
 
 # Named addresses will be accessible in Move as `@name`. They're also exported:
 # for example, `std = "0x1"` is exported by the Standard Library.
