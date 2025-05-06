@@ -1,12 +1,12 @@
 [package]
-name = "dolphin"
+name = "Dolphin"
 edition = "2024.beta" # edition = "legacy" to use legacy (pre-2024) Move
 published-at = "0xccdd73511d0267fa0949fcaaae4e9ecfaeb07e84f4e79a5fb8cba9825e1afb26"
 # license = ""           # e.g., "MIT", "GPL", "Apache 2.0"
 # authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
 
 [dependencies]
-
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/mainnet" }
 # For remote import, use the `{ git = "...", subdir = "...", rev = "..." }`.
 # Revision can be a branch, a tag, and a commit hash.
 # MyRemotePackage = { git = "https://some.remote/host.git", subdir = "remote/path", rev = "main" }

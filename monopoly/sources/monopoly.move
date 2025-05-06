@@ -6,6 +6,7 @@ module monopoly::monopoly {
     };
     use std::type_name::{Self, TypeName};
     use sui::{
+        coin::TreasuryCap,
         dynamic_field as df,
         event,
         object_bag::{Self, ObjectBag},
@@ -584,7 +585,7 @@ module monopoly::monopoly {
         action_request.parameters.fill(parameters);
     }
 
-    // transfer configed ActionRequest to current_player to allow the POST method
+    // transfer configured ActionRequest to current_player to allow the POST method
     public fun request_player_action<P: copy + drop + store>(
         _self: &Game,
         action_request: ActionRequest<P>,
@@ -740,6 +741,20 @@ module monopoly::monopoly {
         event::emit(GameClosedEvent { game: game_id, winners });
 
         winners
+    }
+
+    public fun distribute_rewards<T>(
+        self: Game,
+        treasury_cap: &mut TreasuryCap<T>,
+        value: u64,
+        ctx: &mut TxContext,
+    ) {
+        let winners = self.drop();
+
+        let rewards = treasury_cap.mint(value, ctx);
+
+        // only winner accept the rewards
+        transfer::public_transfer(rewards, winners[0]);
     }
 
     fun roll_game(self: &mut Game) {
